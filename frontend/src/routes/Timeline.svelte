@@ -249,10 +249,11 @@
 	.timeline-spine-line {
 		position: absolute;
 		left: 30px;
-		top: 0;
+		top: -200px;
 		bottom: 0;
 		width: 2px;
 		background: var(--accent);
+		z-index: 0;
 	}
 
 	.empty-timeline {
