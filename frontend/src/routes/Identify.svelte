@@ -144,6 +144,7 @@
 					<span class="process-count">{processProgress.current}/{processProgress.total}</span>
 				{/if}
 			</div>
+			<button class="btn-secondary" style="margin-top: 12px;" onclick={onNext}>Skip to Tagging</button>
 		</div>
 	{/if}
 
