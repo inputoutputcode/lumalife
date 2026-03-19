@@ -54,6 +54,10 @@ export const api = {
 		return request('GET', '/photos/list');
 	},
 
+	rotatePhoto(photoId) {
+		return request('POST', `/photos/${photoId}/rotate`);
+	},
+
 	// Processing
 	startProcessing() {
 		return request('POST', '/photos/process');

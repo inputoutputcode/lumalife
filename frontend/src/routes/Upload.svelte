@@ -223,7 +223,7 @@
 					Process Photos
 				</button>
 			</div>
-			<PhotoGrid photos={photoList} />
+			<PhotoGrid photos={photoList} onUpdate={loadPhotos} />
 		</div>
 	{/if}
 </div>

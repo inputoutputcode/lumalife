@@ -120,6 +120,48 @@ async def upload_photos(request: Request, files: list[UploadFile] = File(...)):
         }
 
 
+@router.post("/{photo_id}/rotate")
+async def rotate_photo(photo_id: str, request: Request):
+    """Rotate a photo 90° clockwise. Can be called multiple times."""
+    user_id = request.state.user_id
+    username = request.state.username
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT stored_filename, width, height FROM photos WHERE id = $1 AND user_id = $2",
+            photo_id, user_id,
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Photo not found")
+
+        user_dir = get_user_dir(username)
+        file_path = os.path.join(user_dir, "uploads", row["stored_filename"])
+
+        if not os.path.isfile(file_path):
+            raise HTTPException(status_code=404, detail="Photo file not found")
+
+        # Rotate 90° clockwise
+        from PIL import Image
+        img = Image.open(file_path)
+        rotated = img.rotate(-90, expand=True)
+        rotated.save(file_path, quality=95)
+
+        new_width, new_height = rotated.size
+
+        await conn.execute(
+            "UPDATE photos SET width = $1, height = $2 WHERE id = $3",
+            new_width, new_height, photo_id,
+        )
+
+        return {
+            "status": "rotated",
+            "photo_id": photo_id,
+            "width": new_width,
+            "height": new_height,
+            "url": f"/data/{username}/uploads/{row['stored_filename']}",
+        }
+
+
 @router.get("/list")
 async def list_photos(request: Request):
     user_id = request.state.user_id
