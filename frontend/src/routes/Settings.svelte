@@ -56,20 +56,6 @@
 <div class="settings-page">
 	<div class="settings-header">
 		<h2>Settings</h2>
-		<button class="btn-secondary" onclick={() => appState.set('upload')}>← Back</button>
-	</div>
-
-	<div class="settings-section">
-		<h3>Account</h3>
-		<div class="settings-card">
-			<div class="setting-row">
-				<div>
-					<p class="setting-label">Logged in as</p>
-					<p class="setting-value">{$currentUser}</p>
-				</div>
-				<button class="btn-secondary" onclick={handleLogout}>Sign Out</button>
-			</div>
-		</div>
 	</div>
 
 	{#if stats}
