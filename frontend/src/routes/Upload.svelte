@@ -152,6 +152,15 @@
 					<div class="progress-bar-fill" style="width: {uploadTotal > 0 ? (uploadProgress / uploadTotal) * 100 : 0}%"></div>
 				</div>
 			</div>
+		{:else if photoList.length > 0}
+			<div class="drop-compact">
+				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+					<polyline points="17 8 12 3 7 8" />
+					<line x1="12" y1="3" x2="12" y2="15" />
+				</svg>
+				<span>Drop photos here or click to add more</span>
+			</div>
 		{:else}
 			<div class="drop-icon">
 				<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -261,6 +270,19 @@
 		cursor: pointer;
 		transition: all var(--transition);
 		background: var(--bg-secondary);
+	}
+
+	.drop-zone.has-photos {
+		padding: 12px 20px;
+	}
+
+	.drop-compact {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 10px;
+		color: var(--text-muted);
+		font-size: 0.9rem;
 	}
 
 	.drop-zone:hover,
