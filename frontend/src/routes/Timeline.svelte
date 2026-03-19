@@ -105,37 +105,6 @@
 		<div class="timeline-header">
 			<h2>Your Timeline</h2>
 			<p class="timeline-subtitle">{timelineData.total_photos} photos across {timelineData.eras.length} eras</p>
-			<div class="timeline-actions">
-				<button class="btn-secondary" onclick={() => showManage = !showManage}>
-					Manage Data
-				</button>
-			</div>
-		</div>
-
-		{#if showManage}
-			<div class="manage-panel">
-				<div class="manage-actions">
-					<button class="btn-secondary" onclick={exportData}>
-						Export JSON
-					</button>
-					<button
-						class="btn-secondary"
-						onclick={reprocess}
-						disabled={reprocessing}
-					>
-						{reprocessing ? 'Resetting...' : 'Re-process'}
-					</button>
-					<button
-						class="btn-danger"
-						onclick={deleteAll}
-						disabled={deleting}
-					>
-						{deleting ? 'Deleting...' : 'Delete All Data'}
-					</button>
-				</div>
-			</div>
-		{/if}
-
 		<div class="timeline-container">
 			<div class="timeline-rail">
 				{#each timelineData.eras as era, i}
@@ -161,25 +130,6 @@
 			<h2>No Timeline Yet</h2>
 			<p>Upload photos and tag them with years to build your timeline.</p>
 			<button class="btn-primary" onclick={onManage}>Upload Photos</button>
-
-			{#if timelineData}
-				<div class="manage-section-empty">
-					<button class="btn-secondary" onclick={() => showManage = !showManage}>
-						Manage Data
-					</button>
-					{#if showManage}
-						<div class="manage-panel inline">
-							<button class="btn-secondary" onclick={exportData}>Export JSON</button>
-							<button class="btn-secondary" onclick={reprocess} disabled={reprocessing}>
-								{reprocessing ? 'Resetting...' : 'Re-process'}
-							</button>
-							<button class="btn-danger" onclick={deleteAll} disabled={deleting}>
-								{deleting ? 'Deleting...' : 'Delete All Data'}
-							</button>
-						</div>
-					{/if}
-				</div>
-			{/if}
 		</div>
 	{/if}
 

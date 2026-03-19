@@ -86,8 +86,10 @@ export const api = {
 		return request('GET', '/photos/target-photos');
 	},
 
-	tagPhoto(photoId, year) {
-		return request('POST', `/photos/${photoId}/tag`, { year });
+	tagPhoto(photoId, year, month = null) {
+		const body = { year };
+		if (month) body.month = month;
+		return request('POST', `/photos/${photoId}/tag`, body);
 	},
 
 	untagPhoto(photoId) {

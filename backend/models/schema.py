@@ -104,6 +104,7 @@ async def init_db():
                 id SERIAL PRIMARY KEY,
                 photo_id TEXT NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
                 year INTEGER NOT NULL,
+                month INTEGER,
                 tagged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 UNIQUE(photo_id)
             )

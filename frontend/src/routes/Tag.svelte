@@ -10,6 +10,7 @@
 	let buildingTimeline = $state(false);
 	let editingPhotoId = $state(null);
 	let yearInput = $state('');
+	let monthInput = $state('');
 
 	async function loadTargetPhotos() {
 		loading = true;
@@ -31,28 +32,30 @@
 		if (isNaN(year) || year < 1900 || year > 2030) {
 			return;
 		}
+		const month = monthInput ? parseInt(monthInput, 10) : null;
 		try {
-			await api.tagPhoto(photoId, year);
+			await api.tagPhoto(photoId, year, month);
+			// Update local data instead of full reload
+			if (targetData) {
+				const photo = targetData.photos.find(p => p.id === photoId);
+				if (photo) {
+					photo.tagged_year = year;
+					photo.tagged_month = month;
+					targetData = { ...targetData };
+				}
+			}
 			editingPhotoId = null;
 			yearInput = '';
-			await loadTargetPhotos();
+			monthInput = '';
 		} catch (e) {
 			error = e.message;
 		}
 	}
 
-	async function untagPhoto(photoId) {
-		try {
-			await api.untagPhoto(photoId);
-			await loadTargetPhotos();
-		} catch (e) {
-			error = e.message;
-		}
-	}
-
-	function startEditing(photoId, existingYear) {
+	function startEditing(photoId, existingYear, existingMonth) {
 		editingPhotoId = photoId;
 		yearInput = existingYear ? String(existingYear) : '';
+		monthInput = existingMonth ? String(existingMonth) : '';
 	}
 
 	async function buildTimeline() {
@@ -164,36 +167,43 @@
 									placeholder="Year"
 									bind:value={yearInput}
 									onkeydown={(e) => e.key === 'Enter' && tagPhoto(photo.id)}
+									class="year-input"
+								/>
+								<input
+									type="number"
+									min="1"
+									max="12"
+									placeholder="Mo"
+									bind:value={monthInput}
+									onkeydown={(e) => e.key === 'Enter' && tagPhoto(photo.id)}
+									class="month-input"
 								/>
 								<button class="btn-primary btn-small" onclick={() => tagPhoto(photo.id)}>
 									Save
 								</button>
 								<button
 									class="btn-secondary btn-small"
-									onclick={() => { editingPhotoId = null; yearInput = ''; }}
+									onclick={() => { editingPhotoId = null; yearInput = ''; monthInput = ''; }}
 								>
-									Cancel
+									✕
 								</button>
 							</div>
 						{:else if photo.tagged_year}
 							<div class="tagged-row">
-								<span class="year-badge">{photo.tagged_year}</span>
+								<span class="year-badge">{photo.tagged_month ? `${photo.tagged_month}/${photo.tagged_year}` : photo.tagged_year}</span>
 								<button
 									class="btn-edit"
-									onclick={() => startEditing(photo.id, photo.tagged_year)}
+									onclick={() => startEditing(photo.id, photo.tagged_year, photo.tagged_month)}
 								>
 									Edit
-								</button>
-								<button class="btn-edit danger" onclick={() => untagPhoto(photo.id)}>
-									Remove
 								</button>
 							</div>
 						{:else}
 							<button
 								class="btn-secondary btn-small full-width"
-								onclick={() => startEditing(photo.id, null)}
+								onclick={() => startEditing(photo.id, null, null)}
 							>
-								Tag with year
+								Date
 							</button>
 						{/if}
 
@@ -395,6 +405,14 @@
 
 	.btn-edit.danger:hover {
 		color: var(--danger);
+	}
+
+	.year-input {
+		width: 70px;
+	}
+
+	.month-input {
+		width: 45px;
 	}
 
 	.btn-small {

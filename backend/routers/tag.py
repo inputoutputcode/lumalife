@@ -8,6 +8,7 @@ router = APIRouter()
 
 class TagRequest(BaseModel):
     year: int = Field(..., ge=1900, le=2030)
+    month: int | None = Field(None, ge=1, le=12)
 
 
 @router.post("/{photo_id}/tag")
@@ -24,13 +25,13 @@ async def tag_photo(photo_id: str, body: TagRequest, request: Request):
             raise HTTPException(status_code=404, detail="Photo not found")
 
         await conn.execute(
-            """INSERT INTO tags (photo_id, year)
-               VALUES ($1, $2)
-               ON CONFLICT (photo_id) DO UPDATE SET year = $2, tagged_at = NOW()""",
-            photo_id, body.year,
+            """INSERT INTO tags (photo_id, year, month)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (photo_id) DO UPDATE SET year = $2, month = $3, tagged_at = NOW()""",
+            photo_id, body.year, body.month,
         )
 
-        return {"status": "tagged", "photo_id": photo_id, "year": body.year}
+        return {"status": "tagged", "photo_id": photo_id, "year": body.year, "month": body.month}
 
 
 @router.delete("/{photo_id}/tag")
@@ -57,7 +58,7 @@ async def get_target_photos(request: Request):
             SELECT DISTINCT ON (p.id) p.id, p.stored_filename, p.original_filename,
                    p.exif_date, p.width, p.height, p.uploaded_at,
                    f.crop_path, f.confidence,
-                   t.year as tagged_year
+                   t.year as tagged_year, t.month as tagged_month
             FROM faces f
             JOIN photos p ON f.photo_id = p.id
             LEFT JOIN tags t ON p.id = t.photo_id
@@ -77,6 +78,7 @@ async def get_target_photos(request: Request):
                 "face_crop_url": f"/data/{username}/{row['crop_path']}",
                 "confidence": row["confidence"],
                 "tagged_year": row["tagged_year"],
+                "tagged_month": row["tagged_month"],
                 "url": f"/data/{username}/uploads/{row['stored_filename']}",
             })
 
