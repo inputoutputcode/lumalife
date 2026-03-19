@@ -8,6 +8,8 @@
 	let confirming = $state(false);
 	let confirmed = $state(false);
 	let error = $state(null);
+	let processing = $state(false);
+	let processProgress = $state({ phase: '', current: 0, total: 0, message: '' });
 
 	async function loadClusters() {
 		loading = true;
@@ -15,7 +17,6 @@
 			const data = await api.getClusters();
 			clusterData = data;
 
-			// Check if already confirmed
 			const target = data.clusters.find((c) => c.is_target);
 			if (target) {
 				confirmed = true;
@@ -27,8 +28,76 @@
 		}
 	}
 
+	async function startProcessing() {
+		processing = true;
+		error = null;
+		processProgress = { phase: 'starting', current: 0, total: 0, message: 'Starting...' };
+
+		const eventSource = api.processStream();
+
+		eventSource.addEventListener('start', (e) => {
+			const data = JSON.parse(e.data);
+			processProgress = { phase: 'face_detection', current: 0, total: data.total, message: 'Detecting faces...' };
+		});
+
+		eventSource.addEventListener('progress', (e) => {
+			const data = JSON.parse(e.data);
+			const facesFound = data.detail?.faces_found ?? 0;
+			processProgress = {
+				phase: data.phase,
+				current: data.current,
+				total: data.total,
+				message: `Photo ${data.current}/${data.total} — ${facesFound} face${facesFound !== 1 ? 's' : ''} found`,
+			};
+		});
+
+		eventSource.addEventListener('phase', (e) => {
+			const data = JSON.parse(e.data);
+			if (data.phase === 'clustering') {
+				processProgress = { ...processProgress, phase: 'clustering', message: `Clustering ${data.total_faces} faces...` };
+			}
+		});
+
+		eventSource.addEventListener('clustering_done', (e) => {
+			const data = JSON.parse(e.data);
+			const clusterCount = data.clusters?.length ?? 0;
+			processProgress = { ...processProgress, phase: 'done', message: `Found ${clusterCount} cluster${clusterCount !== 1 ? 's' : ''} from ${data.total_faces} faces` };
+		});
+
+		eventSource.addEventListener('info', (e) => {
+			const data = JSON.parse(e.data);
+			processProgress = { ...processProgress, message: data.message };
+		});
+
+		eventSource.addEventListener('complete', () => {
+			eventSource.close();
+			processing = false;
+			loadClusters();
+		});
+
+		eventSource.addEventListener('error', (e) => {
+			if (e.data) {
+				const data = JSON.parse(e.data);
+				error = data.error;
+			}
+			eventSource.close();
+			processing = false;
+		});
+
+		eventSource.onerror = () => {
+			eventSource.close();
+			processing = false;
+			if (!error) loadClusters();
+		};
+	}
+
 	$effect(() => {
-		loadClusters();
+		loadClusters().then(() => {
+			// Auto-start processing if no clusters exist yet
+			if (clusterData && clusterData.clusters.length === 0 && !processing) {
+				startProcessing();
+			}
+		});
 	});
 
 	async function confirmCluster(clusterId) {
@@ -54,7 +123,24 @@
 		</p>
 	</div>
 
-	{#if loading}
+	{#if processing}
+		<div class="process-status">
+			<div class="process-status-bar">
+				<div class="process-info">
+					<div class="spinner-small"></div>
+					<span class="process-message">{processProgress.message}</span>
+				</div>
+				{#if processProgress.total > 0}
+					<div class="process-progress-track">
+						<div class="process-progress-fill" style="width: {(processProgress.current / processProgress.total) * 100}%"></div>
+					</div>
+					<span class="process-count">{processProgress.current}/{processProgress.total}</span>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
+	{#if loading && !processing}
 		<div class="loading">
 			<div class="spinner"></div>
 			<p>Loading face clusters...</p>
@@ -173,5 +259,64 @@
 		text-align: center;
 		padding: 60px 0;
 		color: var(--text-secondary);
+	}
+
+	.process-status {
+		margin-bottom: 32px;
+	}
+
+	.process-status-bar {
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		padding: 16px 20px;
+		display: flex;
+		align-items: center;
+		gap: 16px;
+	}
+
+	.process-info {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-shrink: 0;
+	}
+
+	.spinner-small {
+		width: 18px;
+		height: 18px;
+		border: 2px solid var(--border);
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	.process-message {
+		font-size: 0.9rem;
+		color: var(--text-primary);
+		font-weight: 500;
+	}
+
+	.process-progress-track {
+		flex: 1;
+		height: 6px;
+		background: var(--border);
+		border-radius: 3px;
+		overflow: hidden;
+		min-width: 100px;
+	}
+
+	.process-progress-fill {
+		height: 100%;
+		background: var(--accent);
+		border-radius: 3px;
+		transition: width 0.3s ease;
+	}
+
+	.process-count {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		font-weight: 500;
+		flex-shrink: 0;
 	}
 </style>
