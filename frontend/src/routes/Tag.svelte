@@ -1,6 +1,6 @@
 <script>
 	import { api } from '$lib/api.js';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import AccuracyMeter from '../components/AccuracyMeter.svelte';
 
 	let { onNext } = $props();
@@ -69,10 +69,7 @@
 
 	onMount(() => {
 		document.addEventListener('click', handleClickOutside);
-	});
-
-	onDestroy(() => {
-		document.removeEventListener('click', handleClickOutside);
+		return () => document.removeEventListener('click', handleClickOutside);
 	});
 
 	async function buildTimeline() {
