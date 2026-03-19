@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from models.schema import init_db, get_user_dir, _sanitize_username
+from models.schema import init_db, close_db, get_pool, get_or_create_user, get_user_dir, _sanitize_username
 from routers import upload, process, tag, timeline, manage
 
 
@@ -14,10 +14,11 @@ DATA_DIR = os.environ.get("DATA_DIR", "/data")
 
 
 class UserMiddleware(BaseHTTPMiddleware):
-    """Extract X-User header and attach to request state."""
+    """Extract X-User header, resolve to user_id, attach to request state."""
     async def dispatch(self, request: Request, call_next):
         username = request.headers.get("X-User", "default") or "default"
         request.state.username = _sanitize_username(username)
+        request.state.user_id = await get_or_create_user(request.state.username)
         response = await call_next(request)
         return response
 
@@ -26,6 +27,7 @@ class UserMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI):
     await init_db()
     yield
+    await close_db()
 
 
 app = FastAPI(title="LumaLife", version="1.0.0", lifespan=lifespan)
@@ -69,8 +71,8 @@ async def health():
 @app.get("/api/users")
 async def list_users():
     """List all user sessions."""
-    users_dir = os.path.join(DATA_DIR, "users")
-    if not os.path.isdir(users_dir):
-        return {"users": []}
-    users = [d for d in os.listdir(users_dir) if os.path.isdir(os.path.join(users_dir, d))]
-    return {"users": sorted(users)}
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT username FROM users ORDER BY username")
+        users = [r["username"] for r in rows]
+    return {"users": users}

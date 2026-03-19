@@ -92,10 +92,15 @@
 	}
 
 	$effect(() => {
-		loadClusters().then(() => {
-			// Auto-start processing if no clusters exist yet
+		loadClusters().then(async () => {
+			// Only auto-start processing if there are photos but no clusters
 			if (clusterData && clusterData.clusters.length === 0 && !processing) {
-				startProcessing();
+				try {
+					const stats = await api.getStats();
+					if (stats.total_photos > 0) {
+						startProcessing();
+					}
+				} catch {}
 			}
 		});
 	});
@@ -170,7 +175,7 @@
 		{/if}
 	{:else}
 		<div class="no-clusters">
-			<p>No face clusters found. Try uploading more photos with clear faces.</p>
+			<p>No photos uploaded yet. Go to <button class="link-btn" onclick={() => { import('$lib/stores.js').then(m => m.appState.set('upload')); }}>Upload</button> to add your photos first.</p>
 		</div>
 	{/if}
 </div>
@@ -318,5 +323,15 @@
 		color: var(--text-muted);
 		font-weight: 500;
 		flex-shrink: 0;
+	}
+
+	.link-btn {
+		background: none;
+		color: var(--accent);
+		font-weight: 600;
+		font-size: inherit;
+		text-decoration: underline;
+		padding: 0;
+		cursor: pointer;
 	}
 </style>

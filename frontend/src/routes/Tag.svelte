@@ -99,6 +99,10 @@
 			<p>{error}</p>
 			<button class="btn-secondary" onclick={loadTargetPhotos}>Retry</button>
 		</div>
+	{:else if targetData && targetData.total === 0}
+		<div class="empty-state">
+			<p>No identified faces yet. Complete the <button class="link-btn" onclick={() => { import('$lib/stores.js').then(m => m.appState.set('identify')); }}>Identify</button> step first.</p>
+		</div>
 	{:else if targetData}
 		<div class="accuracy-section">
 			<AccuracyMeter
@@ -406,5 +410,21 @@
 		color: var(--text-muted);
 		font-size: 0.75rem;
 		margin-top: 8px;
+	}
+
+	.empty-state {
+		text-align: center;
+		padding: 60px 0;
+		color: var(--text-secondary);
+	}
+
+	.link-btn {
+		background: none;
+		color: var(--accent);
+		font-weight: 600;
+		font-size: inherit;
+		text-decoration: underline;
+		padding: 0;
+		cursor: pointer;
 	}
 </style>
