@@ -123,6 +123,7 @@ async def upload_photos(request: Request, files: list[UploadFile] = File(...)):
 @router.get("/list")
 async def list_photos(request: Request):
     user_id = request.state.user_id
+    username = request.state.username
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(

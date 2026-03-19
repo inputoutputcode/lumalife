@@ -50,6 +50,7 @@ async def untag_photo(photo_id: str, request: Request):
 async def get_target_photos(request: Request):
     """Get all photos of the target person with tag status."""
     user_id = request.state.user_id
+    username = request.state.username
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
