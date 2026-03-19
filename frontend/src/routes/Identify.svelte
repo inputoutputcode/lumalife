@@ -173,9 +173,10 @@
 				<button class="btn-primary" onclick={onNext}>Continue to Tagging</button>
 			</div>
 		{/if}
-	{:else}
+	{:else if !processing}
 		<div class="no-clusters">
-			<p>No photos uploaded yet. Go to <button class="link-btn" onclick={() => { import('$lib/stores.js').then(m => m.appState.set('upload')); }}>Upload</button> to add your photos first.</p>
+			<p>No face clusters found yet. Click <strong>Process Photos</strong> above to scan your photos for faces, or go to <button class="link-btn" onclick={() => { import('$lib/stores.js').then(m => m.appState.set('upload')); }}>Upload</button> if you haven't added photos.</p>
+			<button class="btn-primary" onclick={startProcessing} style="margin-top: 12px;">Process Photos</button>
 		</div>
 	{/if}
 </div>
