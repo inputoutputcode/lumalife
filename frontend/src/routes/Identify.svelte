@@ -93,11 +93,11 @@
 
 	$effect(() => {
 		loadClusters().then(async () => {
-			// Only auto-start processing if there are photos but no clusters
+			// Only auto-start processing if there are unprocessed photos
 			if (clusterData && clusterData.clusters.length === 0 && !processing) {
 				try {
 					const stats = await api.getStats();
-					if (stats.total_photos > 0) {
+					if (stats.total_photos > 0 && stats.processed_photos < stats.total_photos) {
 						startProcessing();
 					}
 				} catch {}
@@ -175,8 +175,12 @@
 		{/if}
 	{:else if !processing}
 		<div class="no-clusters">
-			<p>No face clusters found yet. Click <strong>Process Photos</strong> above to scan your photos for faces, or go to <button class="link-btn" onclick={() => { import('$lib/stores.js').then(m => m.appState.set('upload')); }}>Upload</button> if you haven't added photos.</p>
-			<button class="btn-primary" onclick={startProcessing} style="margin-top: 12px;">Process Photos</button>
+			<p>No face clusters found. This can happen if photos don't contain clear faces.</p>
+			<p style="margin-top: 8px; color: var(--text-muted);">You can skip this step and tag your photos directly.</p>
+			<div style="display: flex; gap: 12px; justify-content: center; margin-top: 16px;">
+				<button class="btn-primary" onclick={onNext}>Skip to Tagging</button>
+				<button class="btn-secondary" onclick={startProcessing}>Re-process Photos</button>
+			</div>
 		</div>
 	{/if}
 </div>
