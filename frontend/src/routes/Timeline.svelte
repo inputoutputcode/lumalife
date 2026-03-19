@@ -252,7 +252,7 @@
 		top: 0;
 		bottom: 0;
 		width: 2px;
-		background: var(--border);
+		background: var(--accent);
 	}
 
 	.empty-timeline {
