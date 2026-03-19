@@ -156,21 +156,15 @@
 						<span class="step-num">4</span> Timeline
 					</button>
 				</nav>
-				<div class="user-area">
-					<button class="user-btn" onclick={() => (showUserMenu = !showUserMenu)}>
-						<span class="user-avatar">👤</span>
-						<span class="user-name">{user}</span>
+				<div class="user-meta">
+					<span class="user-name-display">{user}</span>
+					<button class="meta-link" onclick={() => goTo('settings')} title="Settings">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
 					</button>
-					{#if showUserMenu}
-						<div class="user-dropdown">
-							<button class="dropdown-item" onclick={() => goTo('settings')}>
-								⚙️ Settings
-							</button>
-							<button class="dropdown-item signout" onclick={() => { import('$lib/api.js').then(m => { m.clearUsername(); }); currentUser.set(null); appState.set('login'); showUserMenu = false; }}>
-								🚪 Sign Out
-							</button>
-						</div>
-					{/if}
+					<button class="meta-link signout-link" onclick={() => { import('$lib/api.js').then(m => { m.clearUsername(); }); currentUser.set(null); appState.set('login'); }} title="Sign Out">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+						<span>Sign Out</span>
+					</button>
 				</div>
 			</div>
 		</header>
@@ -220,10 +214,7 @@
 	</div>
 {/if}
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-{#if showUserMenu}
-	<div class="backdrop" onclick={() => (showUserMenu = false)} onkeydown={() => {}}></div>
-{/if}
+
 
 <style>
 	.app {
@@ -312,75 +303,44 @@
 		background: var(--border);
 	}
 
-	.user-area {
-		position: relative;
-	}
-
-	.user-btn {
+	.user-meta {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		background: none;
-		padding: 6px 12px;
-		border-radius: var(--radius);
+		gap: 12px;
+	}
+
+	.user-name-display {
 		font-size: 0.9rem;
-		color: var(--text-primary);
-		border: 1px solid var(--border);
-	}
-
-	.user-btn:hover {
-		background: var(--bg-hover);
-	}
-
-	.user-avatar {
-		font-size: 1.1rem;
-	}
-
-	.user-name {
 		font-weight: 500;
+		color: var(--text-secondary);
 		max-width: 120px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.user-dropdown {
-		position: absolute;
-		right: 0;
-		top: calc(100% + 6px);
-		background: var(--bg-card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-		min-width: 160px;
-		z-index: 200;
-		overflow: hidden;
-	}
-
-	.dropdown-item {
-		display: block;
-		width: 100%;
-		text-align: left;
-		padding: 10px 16px;
-		font-size: 0.9rem;
+	.meta-link {
+		display: flex;
+		align-items: center;
+		gap: 5px;
 		background: none;
-		color: var(--text-primary);
-		border-radius: 0;
+		padding: 6px;
+		border-radius: var(--radius);
+		color: var(--text-muted);
+		font-size: 0.8rem;
 	}
 
-	.dropdown-item:hover {
+	.meta-link:hover {
+		color: var(--text-primary);
 		background: var(--bg-hover);
 	}
 
-	.dropdown-item.signout {
-		border-top: 1px solid var(--border);
-		color: var(--danger);
+	.meta-link span {
+		font-weight: 500;
 	}
 
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		z-index: 150;
+	.signout-link:hover {
+		color: var(--danger);
 	}
 
 	.main-content {
