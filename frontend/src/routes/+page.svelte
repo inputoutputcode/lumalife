@@ -340,7 +340,7 @@
 	}
 
 	.signout-link:hover {
-		color: var(--danger);
+		color: var(--text-primary);
 	}
 
 	.main-content {
