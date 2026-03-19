@@ -187,7 +187,7 @@
 									type="number"
 									min="1"
 									max="12"
-									placeholder="Mo"
+									placeholder="Month"
 									bind:value={monthInput}
 									onkeydown={(e) => e.key === 'Enter' && tagPhoto(photo.id)}
 									class="month-input"
@@ -212,7 +212,7 @@
 								class="btn-secondary btn-small full-width"
 								onclick={() => startEditing(photo.id, null, null)}
 							>
-								Date
+								Tag
 							</button>
 						{/if}
 
@@ -421,7 +421,7 @@
 	}
 
 	.month-input {
-		width: 45px;
+		width: 60px;
 	}
 
 	/* Hide number input spinners */
@@ -438,8 +438,8 @@
 	}
 
 	.btn-small {
-		padding: 6px 14px;
-		font-size: 0.85rem;
+		padding: 4px 10px;
+		font-size: 0.8rem;
 	}
 
 	.full-width {
