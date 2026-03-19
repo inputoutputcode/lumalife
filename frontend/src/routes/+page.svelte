@@ -208,7 +208,7 @@
 		position: sticky;
 		top: 0;
 		z-index: 100;
-		background: rgba(10, 10, 10, 0.9);
+		background: rgba(255, 255, 255, 0.92);
 		backdrop-filter: blur(20px);
 		border-bottom: 1px solid var(--border);
 	}
