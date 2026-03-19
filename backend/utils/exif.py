@@ -1,7 +1,19 @@
-from PIL import Image
+from PIL import Image, ImageOps
 from PIL.ExifTags import TAGS
 import io
 from datetime import datetime
+
+# Human-readable orientation labels
+ORIENTATION_LABELS = {
+    1: "Normal",
+    2: "Mirrored horizontal",
+    3: "Rotated 180°",
+    4: "Mirrored vertical",
+    5: "Mirrored horizontal + rotated 270°",
+    6: "Rotated 270° (camera held right)",
+    7: "Mirrored horizontal + rotated 90°",
+    8: "Rotated 90° (camera held left)",
+}
 
 
 def extract_exif(image_bytes: bytes) -> dict:
@@ -9,6 +21,8 @@ def extract_exif(image_bytes: bytes) -> dict:
     result = {
         "date": None,
         "orientation": 1,
+        "orientation_label": "Normal",
+        "had_exif": False,
         "width": None,
         "height": None,
     }
@@ -22,12 +36,15 @@ def extract_exif(image_bytes: bytes) -> dict:
         if not exif_data:
             return result
 
+        result["had_exif"] = True
         tag_map = {v: k for k, v in TAGS.items()}
 
         # Orientation
         orientation_tag = tag_map.get("Orientation")
         if orientation_tag and orientation_tag in exif_data:
-            result["orientation"] = exif_data[orientation_tag]
+            orientation = exif_data[orientation_tag]
+            result["orientation"] = orientation
+            result["orientation_label"] = ORIENTATION_LABELS.get(orientation, f"Unknown ({orientation})")
 
         # Date
         for date_tag_name in ["DateTimeOriginal", "DateTimeDigitized", "DateTime"]:
@@ -46,27 +63,14 @@ def extract_exif(image_bytes: bytes) -> dict:
     return result
 
 
-def strip_exif(image_bytes: bytes, keep_orientation: bool = True) -> bytes:
-    """Remove EXIF data from image, optionally preserving orientation."""
+def strip_exif(image_bytes: bytes) -> bytes:
+    """Remove EXIF data from image, applying orientation correction first."""
     try:
         img = Image.open(io.BytesIO(image_bytes))
-        orientation = 1
 
-        if keep_orientation:
-            exif_data = img.getexif()
-            tag_map = {v: k for k, v in TAGS.items()}
-            orientation_tag = tag_map.get("Orientation")
-            if orientation_tag and orientation_tag in exif_data:
-                orientation = exif_data[orientation_tag]
-
-        # Apply orientation transform
-        rotation_map = {
-            3: 180,
-            6: 270,
-            8: 90,
-        }
-        if orientation in rotation_map:
-            img = img.rotate(rotation_map[orientation], expand=True)
+        # Use Pillow's built-in EXIF transpose — handles all 8 orientations
+        # including mirroring (orientations 2, 4, 5, 7)
+        img = ImageOps.exif_transpose(img)
 
         # Save without EXIF
         output = io.BytesIO()

@@ -107,6 +107,9 @@ async def upload_photos(files: list[UploadFile] = File(...)):
                     "width": exif_data.get("width"),
                     "height": exif_data.get("height"),
                     "exif_date": exif_data.get("date"),
+                    "orientation": exif_data.get("orientation", 1),
+                    "orientation_label": exif_data.get("orientation_label", "Normal"),
+                    "had_exif": exif_data.get("had_exif", False),
                 })
 
             except HTTPException:
