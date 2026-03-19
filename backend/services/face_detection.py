@@ -109,21 +109,77 @@ async def extract_embedding(crop_path: str) -> list[float] | None:
     )
 
 
+def _count_confident_faces(faces: list[dict], min_confidence: float = 0.5) -> int:
+    """Count faces with real confidence (not fallback whole-image results)."""
+    return sum(1 for f in faces if f.get("confidence", 0) >= min_confidence)
+
+
+def _rotate_and_save(image_path: str, degrees_cw: int) -> None:
+    """Rotate image on disk by degrees clockwise."""
+    img = Image.open(image_path)
+    rotated = img.rotate(-degrees_cw, expand=True)
+    rotated.save(image_path, quality=95)
+
+
 async def process_single_photo(photo_id: str, stored_filename: str, user_dir: str) -> list[dict]:
     """Detect faces and extract embeddings for a single photo.
 
-    Returns list of face dicts with 'embedding' as a list of floats (stored in DB, not files).
+    If no confident faces found, tries rotating 90°, 180°, 270° and keeps
+    the rotation with the best face detection results (auto-rotation).
+    The image file on disk is updated to the best rotation.
     """
-    image_path = os.path.join(user_dir, "uploads", stored_filename)
+    import shutil
 
+    image_path = os.path.join(user_dir, "uploads", stored_filename)
     if not os.path.exists(image_path):
         return []
 
-    faces = await detect_faces(image_path, user_dir)
+    loop = asyncio.get_event_loop()
 
-    for face in faces:
+    # Try original orientation first
+    faces = await detect_faces(image_path, user_dir)
+    best_confident = _count_confident_faces(faces)
+
+    # If we found confident faces at 0°, skip rotation attempts
+    if best_confident > 0:
+        for face in faces:
+            crop_full_path = os.path.join(user_dir, face["crop_path"])
+            embedding = await extract_embedding(crop_full_path)
+            face["embedding"] = embedding
+        return faces
+
+    # No confident faces — try rotations
+    best_faces = faces
+    best_rotation = 0
+    backup_path = image_path + ".bak"
+    shutil.copy2(image_path, backup_path)
+
+    try:
+        for rotation in [90, 180, 270]:
+            # Restore original, then apply rotation
+            shutil.copy2(backup_path, image_path)
+            await loop.run_in_executor(_executor, _rotate_and_save, image_path, rotation)
+
+            trial_faces = await detect_faces(image_path, user_dir)
+            confident = _count_confident_faces(trial_faces)
+
+            if confident > best_confident:
+                best_faces = trial_faces
+                best_rotation = rotation
+                best_confident = confident
+
+        # Apply the winning rotation (or restore original)
+        shutil.copy2(backup_path, image_path)
+        if best_rotation > 0:
+            await loop.run_in_executor(_executor, _rotate_and_save, image_path, best_rotation)
+    finally:
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+
+    # Extract embeddings
+    for face in best_faces:
         crop_full_path = os.path.join(user_dir, face["crop_path"])
         embedding = await extract_embedding(crop_full_path)
-        face["embedding"] = embedding  # list[float] or None
+        face["embedding"] = embedding
 
-    return faces
+    return best_faces
