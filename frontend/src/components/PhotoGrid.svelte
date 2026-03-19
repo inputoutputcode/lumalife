@@ -107,15 +107,17 @@
 	}
 
 	.rotate-btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
+		opacity: 1;
+		cursor: wait;
+		background: var(--accent);
+		color: white;
 	}
 
 	.mini-spinner {
 		width: 14px;
 		height: 14px;
-		border: 2px solid var(--border);
-		border-top-color: var(--accent);
+		border: 2px solid rgba(255, 255, 255, 0.3);
+		border-top-color: white;
 		border-radius: 50%;
 		animation: spin 0.8s linear infinite;
 	}
