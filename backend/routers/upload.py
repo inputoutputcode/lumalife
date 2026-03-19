@@ -1,10 +1,9 @@
 import os
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request
 
-from models.schema import get_db, get_user_dir
+from models.schema import get_pool, get_user_dir
 from utils.validation import validate_mime_type, validate_file_size, MAX_FILES, MAX_FILE_SIZE
 from utils.exif import extract_exif, strip_exif
 
@@ -14,6 +13,7 @@ router = APIRouter()
 @router.post("/upload")
 async def upload_photos(request: Request, files: list[UploadFile] = File(...)):
     username = request.state.username
+    user_id = request.state.user_id
     user_dir = get_user_dir(username)
     if len(files) > MAX_FILES:
         raise HTTPException(
@@ -21,12 +21,12 @@ async def upload_photos(request: Request, files: list[UploadFile] = File(...)):
             detail=f"Maximum {MAX_FILES} files allowed per upload",
         )
 
-    db = await get_db(username)
-    try:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
         # Check existing count
-        cursor = await db.execute("SELECT COUNT(*) as cnt FROM photos")
-        row = await cursor.fetchone()
-        existing_count = row[0] if row else 0
+        existing_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM photos WHERE user_id = $1", user_id
+        )
 
         if existing_count + len(files) > MAX_FILES:
             raise HTTPException(
@@ -79,23 +79,15 @@ async def upload_photos(request: Request, files: list[UploadFile] = File(...)):
                 with open(upload_path, "wb") as f:
                     f.write(clean_content)
 
-                # Store metadata in SQLite
-                await db.execute(
-                    """INSERT INTO photos (id, original_filename, stored_filename, mime_type,
-                       file_size, width, height, exif_date, orientation, uploaded_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        photo_id,
-                        file.filename,
-                        stored_filename,
-                        mime_type,
-                        len(clean_content),
-                        exif_data.get("width"),
-                        exif_data.get("height"),
-                        exif_data.get("date"),
-                        exif_data.get("orientation", 1),
-                        datetime.now().isoformat(),
-                    ),
+                # Store metadata in PostgreSQL
+                await conn.execute(
+                    """INSERT INTO photos (id, user_id, original_filename, stored_filename,
+                       mime_type, file_size, width, height, exif_date, orientation)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)""",
+                    photo_id, user_id, file.filename, stored_filename,
+                    mime_type, len(clean_content),
+                    exif_data.get("width"), exif_data.get("height"),
+                    exif_data.get("date"), exif_data.get("orientation", 1),
                 )
 
                 results.append({
@@ -120,43 +112,38 @@ async def upload_photos(request: Request, files: list[UploadFile] = File(...)):
                     "error": str(e),
                 })
 
-        await db.commit()
-
         return {
             "uploaded": len(results),
             "errors": len(errors),
             "photos": results,
             "error_details": errors,
         }
-    finally:
-        await db.close()
 
 
 @router.get("/list")
 async def list_photos(request: Request):
-    username = request.state.username
-    db = await get_db(username)
-    try:
-        cursor = await db.execute(
-            "SELECT id, original_filename, stored_filename, mime_type, file_size, "
-            "width, height, exif_date, uploaded_at, processed FROM photos ORDER BY uploaded_at DESC"
+    user_id = request.state.user_id
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, original_filename, stored_filename, mime_type, file_size,
+                      width, height, exif_date, uploaded_at, processed
+               FROM photos WHERE user_id = $1 ORDER BY uploaded_at DESC""",
+            user_id,
         )
-        rows = await cursor.fetchall()
         photos = []
         for row in rows:
             photos.append({
-                "id": row[0],
-                "original_filename": row[1],
-                "stored_filename": row[2],
-                "mime_type": row[3],
-                "file_size": row[4],
-                "width": row[5],
-                "height": row[6],
-                "exif_date": row[7],
-                "uploaded_at": row[8],
-                "processed": bool(row[9]),
-                "url": f"/data/uploads/{row[2]}",
+                "id": row["id"],
+                "original_filename": row["original_filename"],
+                "stored_filename": row["stored_filename"],
+                "mime_type": row["mime_type"],
+                "file_size": row["file_size"],
+                "width": row["width"],
+                "height": row["height"],
+                "exif_date": row["exif_date"],
+                "uploaded_at": row["uploaded_at"].isoformat() if row["uploaded_at"] else None,
+                "processed": row["processed"],
+                "url": f"/data/uploads/{row['stored_filename']}",
             })
         return {"photos": photos, "count": len(photos)}
-    finally:
-        await db.close()

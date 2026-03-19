@@ -312,7 +312,7 @@
 	.user-name-display {
 		font-size: 0.9rem;
 		font-weight: 500;
-		color: var(--text-secondary);
+		color: var(--text-muted);
 		max-width: 120px;
 		overflow: hidden;
 		text-overflow: ellipsis;
