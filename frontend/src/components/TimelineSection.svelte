@@ -73,7 +73,6 @@
 		{#each era.photos as photo, i}
 			<button
 				class="timeline-photo"
-				class:featured={i === 0 && era.photos.length > 2}
 				onclick={() => onPhotoClick?.(photo)}
 			>
 				<img
@@ -140,8 +139,8 @@
 
 	.photos-layout {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-		gap: 10px;
+		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+		gap: 8px;
 	}
 
 	.timeline-photo {
@@ -152,13 +151,7 @@
 		background: var(--bg-card);
 		border: none;
 		padding: 0;
-		aspect-ratio: 4/3;
-	}
-
-	.timeline-photo.featured {
-		grid-column: span 2;
-		grid-row: span 2;
-		aspect-ratio: auto;
+		aspect-ratio: 1;
 	}
 
 	.timeline-photo img {
