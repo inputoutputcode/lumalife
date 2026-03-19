@@ -31,7 +31,7 @@
 				<button
 					class="rotate-btn"
 					title="Rotate 90°"
-					onclick={() => rotatePhoto(photo.id)}
+					onclick={(e) => { e.stopPropagation(); rotatePhoto(photo.id); }}
 					disabled={rotating[photo.id]}
 				>
 					{#if rotating[photo.id]}
@@ -79,7 +79,7 @@
 		position: absolute;
 		bottom: 6px;
 		right: 6px;
-		opacity: 0;
+		opacity: 0.6;
 		transition: opacity 200ms ease;
 	}
 
