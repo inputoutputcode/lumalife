@@ -67,7 +67,7 @@
 					<p class="setting-label">Logged in as</p>
 					<p class="setting-value">{$currentUser}</p>
 				</div>
-				<button class="btn-secondary" onclick={handleLogout}>Switch User</button>
+				<button class="btn-secondary" onclick={handleLogout}>Sign Out</button>
 			</div>
 		</div>
 	</div>
