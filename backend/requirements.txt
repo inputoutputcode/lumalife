@@ -6,5 +6,6 @@ scikit-learn==1.6.1
 Pillow==11.1.0
 numpy==1.26.4
 python-magic==0.4.27
+tf-keras==2.19.0
 aiosqlite==0.20.0
 sse-starlette==2.2.1

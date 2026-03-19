@@ -31,7 +31,7 @@ def _detect_faces_sync(image_path: str) -> list[dict]:
     try:
         results = DeepFace.extract_faces(
             img_path=image_path,
-            detector_backend="opencv",
+            detector_backend="ssd",
             enforce_detection=False,
             align=True,
         )
@@ -40,7 +40,7 @@ def _detect_faces_sync(image_path: str) -> list[dict]:
 
     faces = []
     for i, result in enumerate(results):
-        if result.get("confidence", 0) < 0.5:
+        if result.get("confidence", 0) < 0.1:
             continue
 
         facial_area = result.get("facial_area", {})
