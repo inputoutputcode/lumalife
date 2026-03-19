@@ -106,24 +106,16 @@
 			<h2>Your Timeline</h2>
 			<p class="timeline-subtitle">{timelineData.total_photos} photos across {timelineData.eras.length} eras</p>
 		<div class="timeline-container">
-			<div class="timeline-rail">
-				{#each timelineData.eras as era, i}
-					<div id="era-{i}">
-						<TimelineSection
-							{era}
-							index={i}
-							onPhotoClick={selectPhoto}
-							onVisible={() => handleEraChange(i)}
-						/>
-					</div>
-				{/each}
-			</div>
-
-			<MiniMap
-				eras={timelineData.eras}
-				{activeEra}
-				onEraClick={scrollToEra}
-			/>
+			{#each timelineData.eras as era, i}
+				<div id="era-{i}">
+					<TimelineSection
+						{era}
+						index={i}
+						onPhotoClick={selectPhoto}
+						onVisible={() => handleEraChange(i)}
+					/>
+				</div>
+			{/each}
 		</div>
 	{:else}
 		<div class="empty-timeline">
