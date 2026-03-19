@@ -110,6 +110,20 @@
 	function onDragLeave() {
 		dragOver = false;
 	}
+
+	async function deleteAll() {
+		if (!confirm('Delete all photos and data? This cannot be undone.')) return;
+		try {
+			await api.deleteAllData();
+			photoList = [];
+			photos.set([]);
+			uploadResult = null;
+			pendingFiles = [];
+			error = null;
+		} catch (e) {
+			error = e.message;
+		}
+	}
 </script>
 
 <div class="upload-page">
@@ -205,9 +219,14 @@
 		<div class="photo-section">
 			<div class="section-header">
 				<h3>{photoList.length} photo{photoList.length !== 1 ? 's' : ''} uploaded</h3>
-				<button class="btn-primary" onclick={onProcess} disabled={uploading}>
-					Process Photos
-				</button>
+				<div class="section-actions">
+					<button class="btn-danger" onclick={deleteAll} disabled={uploading}>
+						Delete All
+					</button>
+					<button class="btn-primary" onclick={onProcess} disabled={uploading}>
+						Process Photos
+					</button>
+				</div>
 			</div>
 			<PhotoGrid photos={photoList} />
 		</div>
@@ -323,6 +342,12 @@
 		align-items: center;
 		justify-content: space-between;
 		margin-bottom: 24px;
+	}
+
+	.section-actions {
+		display: flex;
+		gap: 10px;
+		align-items: center;
 	}
 
 	.section-header h3 {
