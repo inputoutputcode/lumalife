@@ -10,6 +10,9 @@
 	let photoList = $state([]);
 	let dragOver = $state(false);
 	let error = $state(null);
+	let pendingFiles = $state([]);
+	let uploadProgress = $state(0);
+	let uploadTotal = $state(0);
 
 	async function loadPhotos() {
 		try {
@@ -25,6 +28,14 @@
 		loadPhotos();
 	});
 
+	function createThumbnail(file) {
+		return new Promise((resolve) => {
+			const reader = new FileReader();
+			reader.onload = (e) => resolve(e.target.result);
+			reader.readAsDataURL(file);
+		});
+	}
+
 	async function handleFiles(files) {
 		if (!files || files.length === 0) return;
 
@@ -39,16 +50,43 @@
 			return;
 		}
 
+		// Build preview thumbnails
+		pendingFiles = imageFiles.map((f) => ({
+			name: f.name,
+			size: f.size,
+			thumbnail: null,
+			status: 'pending' // pending | uploading | done | error
+		}));
+
+		// Generate thumbnails in parallel
+		const thumbPromises = imageFiles.map(async (f, i) => {
+			const thumb = await createThumbnail(f);
+			pendingFiles[i] = { ...pendingFiles[i], thumbnail: thumb };
+			pendingFiles = [...pendingFiles]; // trigger reactivity
+		});
+		// Don't await all — start upload while thumbs load
+		Promise.all(thumbPromises);
+
 		uploading = true;
+		uploadProgress = 0;
+		uploadTotal = imageFiles.length;
 		error = null;
 		uploadResult = null;
+
+		// Mark all as uploading
+		pendingFiles = pendingFiles.map((f) => ({ ...f, status: 'uploading' }));
 
 		try {
 			const result = await api.uploadPhotos(imageFiles);
 			uploadResult = result;
+			uploadProgress = imageFiles.length;
+			pendingFiles = pendingFiles.map((f) => ({ ...f, status: 'done' }));
 			await loadPhotos();
 		} catch (e) {
 			error = e.message;
+			pendingFiles = pendingFiles.map((f) =>
+				f.status === 'uploading' ? { ...f, status: 'error' } : f
+			);
 		} finally {
 			uploading = false;
 		}
@@ -93,8 +131,13 @@
 		onkeydown={(e) => e.key === 'Enter' && fileInput?.click()}
 	>
 		{#if uploading}
-			<div class="upload-spinner"></div>
-			<p>Uploading photos...</p>
+			<div class="upload-progress-info">
+				<div class="upload-spinner"></div>
+				<p class="upload-status-text">Uploading {uploadTotal} photo{uploadTotal !== 1 ? 's' : ''}...</p>
+				<div class="progress-bar-track">
+					<div class="progress-bar-fill" style="width: {uploadTotal > 0 ? (uploadProgress / uploadTotal) * 100 : 0}%"></div>
+				</div>
+			</div>
 		{:else}
 			<div class="drop-icon">
 				<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -116,6 +159,30 @@
 		onchange={onFileSelect}
 		style="display: none"
 	/>
+
+	{#if pendingFiles.length > 0 && (uploading || !uploadResult)}
+		<div class="pending-grid">
+			{#each pendingFiles as file}
+				<div class="pending-thumb" class:done={file.status === 'done'} class:error={file.status === 'error'}>
+					{#if file.thumbnail}
+						<img src={file.thumbnail} alt={file.name} />
+					{:else}
+						<div class="thumb-placeholder"></div>
+					{/if}
+					<div class="thumb-overlay">
+						{#if file.status === 'uploading'}
+							<div class="mini-spinner"></div>
+						{:else if file.status === 'done'}
+							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2.5"><polyline points="20 6 9 17 4 12" /></svg>
+						{:else if file.status === 'error'}
+							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+						{/if}
+					</div>
+					<p class="thumb-name">{file.name.length > 12 ? file.name.slice(0, 10) + '…' : file.name}</p>
+				</div>
+			{/each}
+		</div>
+	{/if}
 
 	{#if error}
 		<div class="upload-error">
@@ -263,5 +330,112 @@
 		font-size: 1rem;
 		color: var(--text-secondary);
 		font-weight: 500;
+	}
+
+	.upload-progress-info {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.upload-status-text {
+		font-weight: 500;
+		color: var(--text-primary);
+	}
+
+	.progress-bar-track {
+		width: 240px;
+		height: 6px;
+		background: var(--border);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+
+	.progress-bar-fill {
+		height: 100%;
+		background: var(--accent);
+		border-radius: 3px;
+		transition: width 0.3s ease;
+	}
+
+	.pending-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+		gap: 10px;
+		margin-top: 24px;
+		padding: 0 4px;
+	}
+
+	.pending-thumb {
+		position: relative;
+		aspect-ratio: 1;
+		border-radius: var(--radius);
+		overflow: hidden;
+		background: var(--bg-secondary);
+		border: 2px solid var(--border);
+		transition: border-color 0.3s ease;
+	}
+
+	.pending-thumb.done {
+		border-color: var(--success);
+	}
+
+	.pending-thumb.error {
+		border-color: var(--danger);
+	}
+
+	.pending-thumb img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	.thumb-placeholder {
+		width: 100%;
+		height: 100%;
+		background: var(--bg-hover);
+		animation: pulse 1.2s ease-in-out infinite;
+	}
+
+	@keyframes pulse {
+		0%, 100% { opacity: 0.5; }
+		50% { opacity: 1; }
+	}
+
+	.thumb-overlay {
+		position: absolute;
+		top: 4px;
+		right: 4px;
+		width: 24px;
+		height: 24px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(255, 255, 255, 0.85);
+		border-radius: 50%;
+	}
+
+	.mini-spinner {
+		width: 14px;
+		height: 14px;
+		border: 2px solid var(--border);
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	.thumb-name {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		padding: 2px 4px;
+		font-size: 0.65rem;
+		color: #fff;
+		background: rgba(0, 0, 0, 0.55);
+		text-align: center;
+		white-space: nowrap;
+		overflow: hidden;
 	}
 </style>
