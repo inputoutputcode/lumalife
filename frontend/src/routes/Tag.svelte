@@ -40,8 +40,12 @@
 			if (targetData) {
 				const photo = targetData.photos.find(p => p.id === photoId);
 				if (photo) {
+					const wasUntagged = !photo.tagged_year;
 					photo.tagged_year = year;
 					photo.tagged_month = month;
+					if (wasUntagged) {
+						targetData.tagged_count = (targetData.tagged_count || 0) + 1;
+					}
 					targetData = { ...targetData };
 				}
 			}
