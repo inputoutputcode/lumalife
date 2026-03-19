@@ -219,14 +219,9 @@
 		<div class="photo-section">
 			<div class="section-header">
 				<h3>{photoList.length} photo{photoList.length !== 1 ? 's' : ''} uploaded</h3>
-				<div class="section-actions">
-					<button class="btn-danger" onclick={deleteAll} disabled={uploading}>
-						Delete All
-					</button>
-					<button class="btn-primary" onclick={onProcess} disabled={uploading}>
-						Process Photos
-					</button>
-				</div>
+				<button class="btn-primary" onclick={onProcess} disabled={uploading}>
+					Process Photos
+				</button>
 			</div>
 			<PhotoGrid photos={photoList} />
 		</div>
