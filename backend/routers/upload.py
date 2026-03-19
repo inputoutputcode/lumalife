@@ -140,10 +140,10 @@ async def rotate_photo(photo_id: str, request: Request):
         if not os.path.isfile(file_path):
             raise HTTPException(status_code=404, detail="Photo file not found")
 
-        # Rotate 90° clockwise
+        # Rotate 90° counter-clockwise
         from PIL import Image
         img = Image.open(file_path)
-        rotated = img.rotate(-90, expand=True)
+        rotated = img.rotate(90, expand=True)
         rotated.save(file_path, quality=95)
 
         new_width, new_height = rotated.size
