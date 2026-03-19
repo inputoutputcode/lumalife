@@ -1,25 +1,41 @@
 <script>
-	import { appState, stats } from '$lib/stores.js';
-	import { api } from '$lib/api.js';
+	import { appState, stats, currentUser } from '$lib/stores.js';
+	import { api, getStoredUsername, setUsername } from '$lib/api.js';
 	import { onMount } from 'svelte';
+	import Login from './Login.svelte';
 	import Upload from './Upload.svelte';
 	import Identify from './Identify.svelte';
 	import Tag from './Tag.svelte';
 	import Timeline from './Timeline.svelte';
+	import Settings from './Settings.svelte';
 
-	let currentState = $state('upload');
+	let currentState = $state('login');
 	let processingProgress = $state(null);
 	let error = $state(null);
 	let appStats = $state(null);
+	let user = $state(null);
+	let showUserMenu = $state(false);
 
 	appState.subscribe((v) => (currentState = v));
+	currentUser.subscribe((v) => (user = v));
 
 	onMount(async () => {
+		// Check for stored user session
+		const stored = getStoredUsername();
+		if (stored) {
+			currentUser.set(stored);
+			setUsername(stored);
+			await loadAppState();
+		} else {
+			appState.set('login');
+		}
+	});
+
+	async function loadAppState() {
 		try {
 			appStats = await api.getStats();
 			stats.set(appStats);
 
-			// Auto-navigate based on existing data
 			if (appStats.timeline_entries > 0) {
 				appState.set('timeline');
 			} else if (appStats.tagged_photos >= 8) {
@@ -28,17 +44,26 @@
 				appState.set('tag');
 			} else if (appStats.total_clusters > 0) {
 				appState.set('identify');
-			} else if (appStats.total_photos > 0) {
-				appState.set('processing');
+			} else {
+				appState.set('upload');
 			}
 		} catch {
-			// Fresh start
+			appState.set('upload');
+		}
+	}
+
+	// Watch for user login
+	currentUser.subscribe(async (v) => {
+		if (v && currentState === 'login') {
+			await loadAppState();
 		}
 	});
 
 	function goTo(state) {
+		if (!user && state !== 'login') return;
 		appState.set(state);
 		error = null;
+		showUserMenu = false;
 	}
 
 	async function startProcessing() {
@@ -99,7 +124,6 @@
 
 		eventSource.onerror = () => {
 			eventSource.close();
-			// SSE completed normally
 			if (!error) {
 				appState.set('identify');
 			}
@@ -108,94 +132,95 @@
 	}
 </script>
 
-<div class="app">
-	<header class="app-header">
-		<div class="header-content">
-			<button class="logo" onclick={() => goTo('upload')}>LumaLife</button>
-			<nav class="nav-steps">
-				<button
-					class="step"
-					class:active={currentState === 'upload'}
-					onclick={() => goTo('upload')}
-				>
-					<span class="step-num">1</span> Upload
-				</button>
-				<span class="step-divider"></span>
-				<button
-					class="step"
-					class:active={currentState === 'processing' || currentState === 'identify'}
-					onclick={() => goTo('identify')}
-				>
-					<span class="step-num">2</span> Identify
-				</button>
-				<span class="step-divider"></span>
-				<button
-					class="step"
-					class:active={currentState === 'tag'}
-					onclick={() => goTo('tag')}
-				>
-					<span class="step-num">3</span> Tag
-				</button>
-				<span class="step-divider"></span>
-				<button
-					class="step"
-					class:active={currentState === 'timeline' || currentState === 'building'}
-					onclick={() => goTo('timeline')}
-				>
-					<span class="step-num">4</span> Timeline
-				</button>
-			</nav>
-		</div>
-	</header>
-
-	{#if error}
-		<div class="error-banner">
-			<p>{error}</p>
-			<button onclick={() => (error = null)}>Dismiss</button>
-		</div>
-	{/if}
-
-	<main class="main-content">
-		{#if currentState === 'upload'}
-			<Upload onProcess={startProcessing} />
-		{:else if currentState === 'processing'}
-			<div class="processing-view">
-				<div class="processing-card">
-					<div class="spinner"></div>
-					<h2>Processing Photos</h2>
-					{#if processingProgress}
-						{#if processingProgress.phase === 'face_detection'}
-							<p class="phase-label">Detecting faces...</p>
-							<div class="progress-bar">
-								<div
-									class="progress-fill"
-									style="width: {processingProgress.total > 0
-										? (processingProgress.current / processingProgress.total) * 100
-										: 0}%"
-								></div>
-							</div>
-							<p class="progress-text">
-								{processingProgress.current} / {processingProgress.total} photos
-							</p>
-						{:else if processingProgress.phase === 'clustering'}
-							<p class="phase-label">Clustering faces...</p>
-						{:else if processingProgress.phase === 'info'}
-							<p class="phase-label">{processingProgress.message}</p>
-						{:else}
-							<p class="phase-label">Starting...</p>
-						{/if}
+{#if currentState === 'login'}
+	<Login />
+{:else}
+	<div class="app">
+		<header class="app-header">
+			<div class="header-content">
+				<button class="logo" onclick={() => goTo('upload')}>LumaLife</button>
+				<nav class="nav-steps">
+					<button class="step" class:active={currentState === 'upload'} onclick={() => goTo('upload')}>
+						<span class="step-num">1</span> Upload
+					</button>
+					<span class="step-divider"></span>
+					<button class="step" class:active={currentState === 'processing' || currentState === 'identify'} onclick={() => goTo('identify')}>
+						<span class="step-num">2</span> Identify
+					</button>
+					<span class="step-divider"></span>
+					<button class="step" class:active={currentState === 'tag'} onclick={() => goTo('tag')}>
+						<span class="step-num">3</span> Tag
+					</button>
+					<span class="step-divider"></span>
+					<button class="step" class:active={currentState === 'timeline' || currentState === 'building'} onclick={() => goTo('timeline')}>
+						<span class="step-num">4</span> Timeline
+					</button>
+				</nav>
+				<div class="user-area">
+					<button class="user-btn" onclick={() => (showUserMenu = !showUserMenu)}>
+						<span class="user-avatar">👤</span>
+						<span class="user-name">{user}</span>
+					</button>
+					{#if showUserMenu}
+						<div class="user-dropdown">
+							<button class="dropdown-item" onclick={() => goTo('settings')}>
+								⚙️ Settings
+							</button>
+						</div>
 					{/if}
 				</div>
 			</div>
-		{:else if currentState === 'identify'}
-			<Identify onNext={() => goTo('tag')} />
-		{:else if currentState === 'tag'}
-			<Tag onNext={() => goTo('timeline')} />
-		{:else if currentState === 'timeline' || currentState === 'building'}
-			<Timeline onManage={() => goTo('upload')} />
+		</header>
+
+		{#if error}
+			<div class="error-banner">
+				<p>{error}</p>
+				<button onclick={() => (error = null)}>Dismiss</button>
+			</div>
 		{/if}
-	</main>
-</div>
+
+		<main class="main-content">
+			{#if currentState === 'upload'}
+				<Upload onProcess={startProcessing} />
+			{:else if currentState === 'processing'}
+				<div class="processing-view">
+					<div class="processing-card">
+						<div class="spinner"></div>
+						<h2>Processing Photos</h2>
+						{#if processingProgress}
+							{#if processingProgress.phase === 'face_detection'}
+								<p class="phase-label">Detecting faces...</p>
+								<div class="progress-bar">
+									<div class="progress-fill" style="width: {processingProgress.total > 0 ? (processingProgress.current / processingProgress.total) * 100 : 0}%"></div>
+								</div>
+								<p class="progress-text">{processingProgress.current} / {processingProgress.total} photos</p>
+							{:else if processingProgress.phase === 'clustering'}
+								<p class="phase-label">Clustering faces...</p>
+							{:else if processingProgress.phase === 'info'}
+								<p class="phase-label">{processingProgress.message}</p>
+							{:else}
+								<p class="phase-label">Starting...</p>
+							{/if}
+						{/if}
+					</div>
+				</div>
+			{:else if currentState === 'identify'}
+				<Identify onNext={() => goTo('tag')} />
+			{:else if currentState === 'tag'}
+				<Tag onNext={() => goTo('timeline')} />
+			{:else if currentState === 'timeline' || currentState === 'building'}
+				<Timeline onManage={() => goTo('upload')} />
+			{:else if currentState === 'settings'}
+				<Settings />
+			{/if}
+		</main>
+	</div>
+{/if}
+
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+{#if showUserMenu}
+	<div class="backdrop" onclick={() => (showUserMenu = false)} onkeydown={() => {}}></div>
+{/if}
 
 <style>
 	.app {
@@ -274,7 +299,7 @@
 
 	.step.active .step-num {
 		background: var(--accent);
-		color: var(--bg-primary);
+		color: white;
 		border-color: var(--accent);
 	}
 
@@ -282,6 +307,72 @@
 		width: 20px;
 		height: 1px;
 		background: var(--border);
+	}
+
+	.user-area {
+		position: relative;
+	}
+
+	.user-btn {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		background: none;
+		padding: 6px 12px;
+		border-radius: var(--radius);
+		font-size: 0.9rem;
+		color: var(--text-primary);
+		border: 1px solid var(--border);
+	}
+
+	.user-btn:hover {
+		background: var(--bg-hover);
+	}
+
+	.user-avatar {
+		font-size: 1.1rem;
+	}
+
+	.user-name {
+		font-weight: 500;
+		max-width: 120px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.user-dropdown {
+		position: absolute;
+		right: 0;
+		top: calc(100% + 6px);
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+		min-width: 160px;
+		z-index: 200;
+		overflow: hidden;
+	}
+
+	.dropdown-item {
+		display: block;
+		width: 100%;
+		text-align: left;
+		padding: 10px 16px;
+		font-size: 0.9rem;
+		background: none;
+		color: var(--text-primary);
+		border-radius: 0;
+	}
+
+	.dropdown-item:hover {
+		background: var(--bg-hover);
+	}
+
+	.backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 150;
 	}
 
 	.main-content {
@@ -367,9 +458,7 @@
 	}
 
 	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
+		to { transform: rotate(360deg); }
 	}
 
 	@media (max-width: 768px) {

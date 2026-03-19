@@ -2,26 +2,26 @@ import os
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request
 
-from models.schema import get_db
+from models.schema import get_db, get_user_dir
 from utils.validation import validate_mime_type, validate_file_size, MAX_FILES, MAX_FILE_SIZE
 from utils.exif import extract_exif, strip_exif
 
 router = APIRouter()
 
-DATA_DIR = os.environ.get("DATA_DIR", "/data")
-
 
 @router.post("/upload")
-async def upload_photos(files: list[UploadFile] = File(...)):
+async def upload_photos(request: Request, files: list[UploadFile] = File(...)):
+    username = request.state.username
+    user_dir = get_user_dir(username)
     if len(files) > MAX_FILES:
         raise HTTPException(
             status_code=400,
             detail=f"Maximum {MAX_FILES} files allowed per upload",
         )
 
-    db = await get_db()
+    db = await get_db(username)
     try:
         # Check existing count
         cursor = await db.execute("SELECT COUNT(*) as cnt FROM photos")
@@ -74,8 +74,8 @@ async def upload_photos(files: list[UploadFile] = File(...)):
                 ext = ext_map.get(mime_type, ".jpg")
                 stored_filename = f"{photo_id}{ext}"
 
-                # Save to uploads directory
-                upload_path = os.path.join(DATA_DIR, "uploads", stored_filename)
+                # Save to user's uploads directory
+                upload_path = os.path.join(user_dir, "uploads", stored_filename)
                 with open(upload_path, "wb") as f:
                     f.write(clean_content)
 
@@ -133,8 +133,9 @@ async def upload_photos(files: list[UploadFile] = File(...)):
 
 
 @router.get("/list")
-async def list_photos():
-    db = await get_db()
+async def list_photos(request: Request):
+    username = request.state.username
+    db = await get_db(username)
     try:
         cursor = await db.execute(
             "SELECT id, original_filename, stored_filename, mime_type, file_size, "

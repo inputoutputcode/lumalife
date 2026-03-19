@@ -3,24 +3,30 @@ import json
 import os
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
-from models.schema import get_db
+from models.schema import get_db, get_user_dir
 from services.face_detection import process_single_photo
 from services.clustering import load_embeddings, cluster_faces, get_cluster_stats
 from services.age_estimation import estimate_age
 
 router = APIRouter()
 
-DATA_DIR = os.environ.get("DATA_DIR", "/data")
+# Processing locks per user
+_processing_locks: dict[str, asyncio.Lock] = {}
 
-# Processing lock to prevent concurrent runs
-_processing_lock = asyncio.Lock()
+
+def _get_lock(username: str) -> asyncio.Lock:
+    if username not in _processing_locks:
+        _processing_locks[username] = asyncio.Lock()
+    return _processing_locks[username]
 
 
 @router.post("/process")
-async def start_processing():
+async def start_processing(request: Request):
+    username = request.state.username
+    _processing_lock = _get_lock(username)
     """Trigger face detection, embedding extraction, and clustering."""
     if _processing_lock.locked():
         raise HTTPException(status_code=409, detail="Processing already in progress")
@@ -29,8 +35,14 @@ async def start_processing():
 
 
 @router.get("/process/stream")
-async def process_stream():
+async def process_stream(request: Request, user: str | None = None):
     """SSE stream for processing progress."""
+    # SSE (EventSource) can't send headers, so accept user from query param too
+    username = user if user else request.state.username
+    from models.schema import _sanitize_username
+    username = _sanitize_username(username)
+    user_dir = get_user_dir(username)
+    _processing_lock = _get_lock(username)
 
     async def event_generator():
         if _processing_lock.locked():
@@ -38,7 +50,7 @@ async def process_stream():
             return
 
         async with _processing_lock:
-            db = await get_db()
+            db = await get_db(username)
             try:
                 # Get unprocessed photos
                 cursor = await db.execute(
@@ -68,7 +80,7 @@ async def process_stream():
                 async def process_with_limit(photo_id, filename, index):
                     async with semaphore:
                         try:
-                            faces = await process_single_photo(photo_id, filename)
+                            faces = await process_single_photo(photo_id, filename, user_dir)
                             # Store faces in DB
                             for face in faces:
                                 await db.execute(
@@ -156,7 +168,7 @@ async def process_stream():
                 }
 
                 if len(all_faces_for_clustering) > 0:
-                    face_ids, embeddings = load_embeddings(all_faces_for_clustering)
+                    face_ids, embeddings = load_embeddings(all_faces_for_clustering, user_dir)
 
                     if len(face_ids) > 0:
                         assignments = cluster_faces(face_ids, embeddings)
@@ -220,9 +232,10 @@ async def process_stream():
 
 
 @router.get("/clusters")
-async def get_clusters():
+async def get_clusters(request: Request):
     """Get face clusters with representative face crops."""
-    db = await get_db()
+    username = request.state.username
+    db = await get_db(username)
     try:
         cursor = await db.execute(
             "SELECT id, face_count, is_target, confirmed_at FROM clusters ORDER BY face_count DESC"
@@ -263,9 +276,10 @@ async def get_clusters():
 
 
 @router.post("/clusters/{cluster_id}/confirm")
-async def confirm_cluster(cluster_id: int):
+async def confirm_cluster(cluster_id: int, request: Request):
     """Confirm a cluster as the target person."""
-    db = await get_db()
+    username = request.state.username
+    db = await get_db(username)
     try:
         # Reset any previous target
         await db.execute("UPDATE clusters SET is_target = 0, confirmed_at = NULL")
@@ -294,9 +308,10 @@ async def confirm_cluster(cluster_id: int):
 
 
 @router.post("/estimate-ages")
-async def estimate_ages():
+async def estimate_ages(request: Request):
     """Run age estimation on all target person face crops."""
-    db = await get_db()
+    username = request.state.username
+    db = await get_db(username)
     try:
         cursor = await db.execute(
             """SELECT f.id, f.crop_path, f.photo_id
@@ -314,7 +329,8 @@ async def estimate_ages():
             crop_path = face[1]
             photo_id = face[2]
 
-            age = await estimate_age(crop_path)
+            user_dir = get_user_dir(username)
+            age = await estimate_age(crop_path, user_dir)
             if age is not None:
                 await db.execute(
                     """INSERT OR REPLACE INTO age_estimates

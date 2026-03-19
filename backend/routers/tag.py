@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from models.schema import get_db
@@ -11,9 +11,10 @@ class TagRequest(BaseModel):
 
 
 @router.post("/{photo_id}/tag")
-async def tag_photo(photo_id: str, body: TagRequest):
+async def tag_photo(photo_id: str, body: TagRequest, request: Request):
+    username = request.state.username
     """Assign a year to a photo."""
-    db = await get_db()
+    db = await get_db(username)
     try:
         # Verify photo exists
         cursor = await db.execute("SELECT id FROM photos WHERE id = ?", (photo_id,))
@@ -33,9 +34,10 @@ async def tag_photo(photo_id: str, body: TagRequest):
 
 
 @router.delete("/{photo_id}/tag")
-async def untag_photo(photo_id: str):
+async def untag_photo(photo_id: str, request: Request):
+    username = request.state.username
     """Remove year tag from a photo."""
-    db = await get_db()
+    db = await get_db(username)
     try:
         await db.execute("DELETE FROM tags WHERE photo_id = ?", (photo_id,))
         await db.commit()
@@ -45,9 +47,10 @@ async def untag_photo(photo_id: str):
 
 
 @router.get("/target-photos")
-async def get_target_photos():
+async def get_target_photos(request: Request):
+    username = request.state.username
     """Get all photos of the target person with tag status."""
-    db = await get_db()
+    db = await get_db(username)
     try:
         cursor = await db.execute("""
             SELECT DISTINCT p.id, p.stored_filename, p.original_filename,

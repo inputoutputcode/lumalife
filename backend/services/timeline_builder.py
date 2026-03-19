@@ -2,9 +2,9 @@ from models.schema import get_db
 from services.age_estimation import build_age_year_mapping, assign_era_buckets
 
 
-async def build_timeline() -> dict:
+async def build_timeline(username: str = "default") -> dict:
     """Build the full timeline from current data."""
-    db = await get_db()
+    db = await get_db(username)
     try:
         # Get all target person faces with their photos
         cursor = await db.execute("""

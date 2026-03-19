@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from PIL import Image
 
-DATA_DIR = os.environ.get("DATA_DIR", "/data")
+# DATA_DIR is now passed per-call via user_dir parameter
 
 # Thread pool for CPU-bound DeepFace operations
 _executor = ThreadPoolExecutor(max_workers=3)
@@ -24,7 +24,7 @@ def _get_deepface():
     return _deepface
 
 
-def _detect_faces_sync(image_path: str) -> list[dict]:
+def _detect_faces_sync(image_path: str, user_dir: str) -> list[dict]:
     """Detect faces in image and return face data. Runs in thread pool."""
     DeepFace = _get_deepface()
 
@@ -52,7 +52,7 @@ def _detect_faces_sync(image_path: str) -> list[dict]:
         # Save face crop
         face_id = str(uuid.uuid4())
         crop_filename = f"{face_id}.jpg"
-        crop_path = os.path.join(DATA_DIR, "processed", crop_filename)
+        crop_path = os.path.join(user_dir, "processed", crop_filename)
 
         face_img = (np.array(face_array) * 255).astype(np.uint8)
         if face_img.ndim == 3 and face_img.shape[2] == 3:
@@ -94,11 +94,11 @@ def _extract_embedding_sync(image_path: str) -> list[float] | None:
     return None
 
 
-async def detect_faces(image_path: str) -> list[dict]:
+async def detect_faces(image_path: str, user_dir: str) -> list[dict]:
     """Async wrapper for face detection."""
     loop = asyncio.get_event_loop()
     return await asyncio.wait_for(
-        loop.run_in_executor(_executor, _detect_faces_sync, image_path),
+        loop.run_in_executor(_executor, _detect_faces_sync, image_path, user_dir),
         timeout=30.0,
     )
 
@@ -112,22 +112,22 @@ async def extract_embedding(crop_path: str) -> list[float] | None:
     )
 
 
-async def process_single_photo(photo_id: str, stored_filename: str) -> list[dict]:
+async def process_single_photo(photo_id: str, stored_filename: str, user_dir: str) -> list[dict]:
     """Detect faces and extract embeddings for a single photo."""
-    image_path = os.path.join(DATA_DIR, "uploads", stored_filename)
+    image_path = os.path.join(user_dir, "uploads", stored_filename)
 
     if not os.path.exists(image_path):
         return []
 
-    faces = await detect_faces(image_path)
+    faces = await detect_faces(image_path, user_dir)
 
     for face in faces:
-        crop_full_path = os.path.join(DATA_DIR, face["crop_path"])
+        crop_full_path = os.path.join(user_dir, face["crop_path"])
         embedding = await extract_embedding(crop_full_path)
 
         if embedding is not None:
             embedding_filename = f"{face['face_id']}.json"
-            embedding_path = os.path.join(DATA_DIR, "embeddings", embedding_filename)
+            embedding_path = os.path.join(user_dir, "embeddings", embedding_filename)
             with open(embedding_path, "w") as f:
                 json.dump(embedding, f)
             face["embedding_path"] = f"embeddings/{embedding_filename}"

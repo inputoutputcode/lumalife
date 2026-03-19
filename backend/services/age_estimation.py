@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
-DATA_DIR = os.environ.get("DATA_DIR", "/data")
+# user_dir passed per-call now
 _executor = ThreadPoolExecutor(max_workers=2)
 
 _deepface = None
@@ -39,10 +39,10 @@ def _estimate_age_sync(crop_path: str) -> float | None:
     return None
 
 
-async def estimate_age(crop_path: str) -> float | None:
+async def estimate_age(crop_path: str, user_dir: str = "/data") -> float | None:
     """Async wrapper for age estimation."""
     loop = asyncio.get_event_loop()
-    full_path = os.path.join(DATA_DIR, crop_path) if not crop_path.startswith("/") else crop_path
+    full_path = os.path.join(user_dir, crop_path) if not crop_path.startswith("/") else crop_path
     return await asyncio.wait_for(
         loop.run_in_executor(_executor, _estimate_age_sync, full_path),
         timeout=30.0,

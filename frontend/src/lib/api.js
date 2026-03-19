@@ -1,9 +1,28 @@
 const API_BASE = '/api';
 
+function getUsername() {
+	return localStorage.getItem('lumalife_user') || '';
+}
+
+export function setUsername(name) {
+	localStorage.setItem('lumalife_user', name);
+}
+
+export function getStoredUsername() {
+	return localStorage.getItem('lumalife_user') || null;
+}
+
+export function clearUsername() {
+	localStorage.removeItem('lumalife_user');
+}
+
 async function request(method, path, body = null) {
+	const username = getUsername();
 	const opts = {
 		method,
-		headers: {},
+		headers: {
+			'X-User': username,
+		},
 	};
 
 	if (body && !(body instanceof FormData)) {
@@ -41,7 +60,9 @@ export const api = {
 	},
 
 	processStream() {
-		return new EventSource(`${API_BASE}/photos/process/stream`);
+		// EventSource doesn't support custom headers, so pass username as query param
+		const username = getUsername();
+		return new EventSource(`${API_BASE}/photos/process/stream?user=${encodeURIComponent(username)}`);
 	},
 
 	getClusters() {

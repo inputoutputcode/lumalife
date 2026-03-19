@@ -4,16 +4,13 @@ import os
 import numpy as np
 from sklearn.cluster import DBSCAN
 
-DATA_DIR = os.environ.get("DATA_DIR", "/data")
-
-
-def load_embeddings(face_records: list[dict]) -> tuple[list[str], np.ndarray]:
+def load_embeddings(face_records: list[dict], user_dir: str) -> tuple[list[str], np.ndarray]:
     """Load embeddings from disk for clustering."""
     face_ids = []
     embeddings = []
 
     for face in face_records:
-        embedding_path = os.path.join(DATA_DIR, face["embedding_path"])
+        embedding_path = os.path.join(user_dir, face["embedding_path"])
         if not os.path.exists(embedding_path):
             continue
 
