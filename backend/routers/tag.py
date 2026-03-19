@@ -54,15 +54,15 @@ async def get_target_photos(request: Request):
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT DISTINCT p.id, p.stored_filename, p.original_filename,
-                   p.exif_date, p.width, p.height,
+            SELECT DISTINCT ON (p.id) p.id, p.stored_filename, p.original_filename,
+                   p.exif_date, p.width, p.height, p.uploaded_at,
                    f.crop_path, f.confidence,
                    t.year as tagged_year
             FROM faces f
             JOIN photos p ON f.photo_id = p.id
             LEFT JOIN tags t ON p.id = t.photo_id
             WHERE f.is_target = TRUE AND p.user_id = $1
-            ORDER BY t.year ASC NULLS LAST, p.uploaded_at ASC
+            ORDER BY p.id, t.year ASC NULLS LAST, p.uploaded_at ASC
         """, user_id)
 
         photos = []
