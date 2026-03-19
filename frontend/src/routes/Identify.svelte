@@ -10,6 +10,7 @@
 	let error = $state(null);
 	let processing = $state(false);
 	let processProgress = $state({ phase: '', current: 0, total: 0, message: '' });
+	let hasAutoStarted = false;
 
 	async function loadClusters() {
 		loading = true;
@@ -93,8 +94,9 @@
 
 	$effect(() => {
 		loadClusters().then(async () => {
-			// Only auto-start processing if there are unprocessed photos
-			if (clusterData && clusterData.clusters.length === 0 && !processing) {
+			// Only auto-start processing once, and only if there are unprocessed photos
+			if (clusterData && clusterData.clusters.length === 0 && !processing && !hasAutoStarted) {
+				hasAutoStarted = true;
 				try {
 					const stats = await api.getStats();
 					if (stats.total_photos > 0 && stats.processed_photos < stats.total_photos) {
