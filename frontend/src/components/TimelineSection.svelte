@@ -58,103 +58,64 @@
 </script>
 
 <section class="timeline-section" bind:this={sectionEl}>
-	<div class="timeline-row">
-		<!-- Vertical line with dot -->
-		<div class="timeline-spine">
-			<div class="timeline-line"></div>
-			<div
-				class="timeline-dot"
-				style="width: {getDotSize(era.photos.length)}px; height: {getDotSize(era.photos.length)}px;"
-				title="{era.photos.length} photos"
-			></div>
-		</div>
+	<div
+		class="timeline-dot"
+		style="width: {getDotSize(era.photos.length)}px; height: {getDotSize(era.photos.length)}px;"
+		title="{era.photos.length} photos"
+	></div>
 
-		<!-- Content -->
-		<div class="timeline-content">
-			<div class="era-info">
-				<h2 class="era-title">{era.label}</h2>
-				<span class="era-count">{era.photos.length} photo{era.photos.length !== 1 ? 's' : ''}</span>
-			</div>
+	<div class="era-info">
+		<h2 class="era-title">{era.label}</h2>
+		<span class="era-count">{era.photos.length} photo{era.photos.length !== 1 ? 's' : ''}</span>
+	</div>
 
-			<div class="photos-layout">
-				{#each era.photos as photo, i}
-					<button
-						class="timeline-photo"
-						class:featured={i === 0 && era.photos.length > 2}
-						onclick={() => onPhotoClick?.(photo)}
-					>
-						<img
-							src={photo.url}
-							alt={photo.original_filename || 'Photo'}
-							loading="lazy"
-						/>
-						<div class="photo-overlay">
-							<span class="photo-year">
-								{#if photo.tagged_year}
-									{photo.tagged_year}
-								{:else if photo.estimated_year}
-									~{photo.estimated_year}
-								{/if}
-							</span>
-						</div>
-					</button>
-				{/each}
-			</div>
-		</div>
+	<div class="photos-layout">
+		{#each era.photos as photo, i}
+			<button
+				class="timeline-photo"
+				class:featured={i === 0 && era.photos.length > 2}
+				onclick={() => onPhotoClick?.(photo)}
+			>
+				<img
+					src={photo.url}
+					alt={photo.original_filename || 'Photo'}
+					loading="lazy"
+				/>
+				<div class="photo-overlay">
+					<span class="photo-year">
+						{#if photo.tagged_year}
+							{photo.tagged_year}
+						{:else if photo.estimated_year}
+							~{photo.estimated_year}
+						{/if}
+					</span>
+				</div>
+			</button>
+		{/each}
 	</div>
 </section>
 
 <style>
 	.timeline-section {
-		padding: 0;
-	}
-
-	.timeline-row {
-		display: flex;
-		gap: 0;
-		min-height: 200px;
-	}
-
-	/* Vertical spine */
-	.timeline-spine {
 		position: relative;
-		width: 60px;
-		flex-shrink: 0;
-		display: flex;
-		justify-content: center;
-	}
-
-	.timeline-line {
-		position: absolute;
-		top: 0;
-		bottom: 0;
-		left: 50%;
-		width: 2px;
-		background: var(--border);
-		transform: translateX(-50%);
+		padding: 0 0 48px 0;
 	}
 
 	.timeline-dot {
-		position: relative;
-		top: 32px;
+		position: absolute;
+		left: -30px;
+		top: 6px;
+		transform: translateX(-50%);
 		border-radius: 50%;
 		background: var(--accent);
 		border: 3px solid var(--bg-primary);
 		box-shadow: 0 0 0 2px var(--accent);
 		z-index: 2;
-		flex-shrink: 0;
 		transition: transform 200ms ease;
 	}
 
 	.timeline-section:hover .timeline-dot {
-		transform: scale(1.15);
-	}
-
-	/* Content */
-	.timeline-content {
-		flex: 1;
-		padding: 16px 24px 48px 16px;
-		min-width: 0;
+		transform: translateX(-50%) scale(1.15);
 	}
 
 	.era-info {
@@ -233,10 +194,6 @@
 	}
 
 	@media (max-width: 768px) {
-		.timeline-spine {
-			width: 40px;
-		}
-
 		.photos-layout {
 			grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
 		}

@@ -107,6 +107,7 @@
 			<p class="timeline-subtitle">{timelineData.total_photos} photos across {timelineData.eras.length} eras</p>
 		</div>
 		<div class="timeline-container">
+			<div class="timeline-spine-line"></div>
 			{#each timelineData.eras as era, i}
 				<div id="era-{i}">
 					<TimelineSection
@@ -240,12 +241,18 @@
 
 	.timeline-container {
 		position: relative;
-		display: flex;
+		max-width: 1200px;
+		margin: 0 auto;
+		padding-left: 60px;
 	}
 
-	.timeline-rail {
-		flex: 1;
-		min-width: 0;
+	.timeline-spine-line {
+		position: absolute;
+		left: 30px;
+		top: 0;
+		bottom: 0;
+		width: 2px;
+		background: var(--border);
 	}
 
 	.empty-timeline {
