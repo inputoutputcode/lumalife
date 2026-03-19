@@ -415,6 +415,19 @@
 		width: 45px;
 	}
 
+	/* Hide number input spinners */
+	.year-input::-webkit-inner-spin-button,
+	.year-input::-webkit-outer-spin-button,
+	.month-input::-webkit-inner-spin-button,
+	.month-input::-webkit-outer-spin-button {
+		-webkit-appearance: none;
+		margin: 0;
+	}
+	.year-input,
+	.month-input {
+		-moz-appearance: textfield;
+	}
+
 	.btn-small {
 		padding: 6px 14px;
 		font-size: 0.85rem;
