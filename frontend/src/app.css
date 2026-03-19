@@ -1,17 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap');
 
 :root {
-	--bg-primary: #0a0a0a;
-	--bg-secondary: #141414;
-	--bg-card: #1a1a1a;
-	--bg-hover: #222222;
-	--text-primary: #f5f5f5;
-	--text-secondary: #a0a0a0;
-	--text-muted: #666666;
-	--accent: #c9a84c;
-	--accent-dim: #8a7033;
-	--accent-glow: rgba(201, 168, 76, 0.15);
-	--border: #2a2a2a;
+	--bg-primary: #ffffff;
+	--bg-secondary: #f7f7f7;
+	--bg-card: #ffffff;
+	--bg-hover: #f0f0f0;
+	--text-primary: #1a1a1a;
+	--text-secondary: #555555;
+	--text-muted: #999999;
+	--accent: #2a6bd1;
+	--accent-dim: #1e4f9e;
+	--accent-glow: rgba(42, 107, 209, 0.12);
+	--border: #e0e0e0;
 	--danger: #e74c3c;
 	--success: #2ecc71;
 	--radius: 8px;
@@ -56,7 +56,7 @@ button {
 
 .btn-primary {
 	background: var(--accent);
-	color: var(--bg-primary);
+	color: #ffffff;
 	padding: 12px 28px;
 	border-radius: var(--radius);
 	font-weight: 600;
@@ -65,7 +65,7 @@ button {
 }
 
 .btn-primary:hover {
-	background: #d4b85a;
+	background: #1e5abb;
 	transform: translateY(-1px);
 	box-shadow: 0 4px 20px var(--accent-glow);
 }
@@ -117,11 +117,11 @@ a {
 }
 
 ::-webkit-scrollbar-track {
-	background: var(--bg-primary);
+	background: #f5f5f5;
 }
 
 ::-webkit-scrollbar-thumb {
-	background: var(--border);
+	background: #cccccc;
 	border-radius: 3px;
 }
 
