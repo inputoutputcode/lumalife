@@ -26,9 +26,13 @@
 		}
 	}
 
-	onMount(() => {
-		loadTimeline();
-	});
+	// Flat list of all photos for navigation
+	let allPhotos = $derived(
+		timelineData?.eras?.flatMap(era => era.photos) || []
+	);
+	let selectedIndex = $derived(
+		selectedPhoto ? allPhotos.findIndex(p => p.photo_id === selectedPhoto.photo_id || p.url === selectedPhoto.url) : -1
+	);
 
 	function selectPhoto(photo) {
 		selectedPhoto = photo;
@@ -37,6 +41,33 @@
 	function closeDetail() {
 		selectedPhoto = null;
 	}
+
+	function navigatePhoto(direction) {
+		if (selectedIndex < 0) return;
+		const newIndex = selectedIndex + direction;
+		if (newIndex >= 0 && newIndex < allPhotos.length) {
+			selectedPhoto = allPhotos[newIndex];
+		}
+	}
+
+	function handleLightboxKey(e) {
+		if (!selectedPhoto) return;
+		if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+			e.preventDefault();
+			navigatePhoto(-1);
+		} else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+			e.preventDefault();
+			navigatePhoto(1);
+		} else if (e.key === 'Escape') {
+			closeDetail();
+		}
+	}
+
+	onMount(() => {
+		loadTimeline();
+		document.addEventListener('keydown', handleLightboxKey);
+		return () => document.removeEventListener('keydown', handleLightboxKey);
+	});
 
 	async function deleteAll() {
 		if (!confirm('Delete ALL data? This cannot be undone.')) return;
@@ -129,7 +160,23 @@
 
 	{#if selectedPhoto}
 		<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-		<div class="photo-detail-overlay" onclick={closeDetail} onkeydown={(e) => e.key === 'Escape' && closeDetail()}>
+		<div class="photo-detail-overlay" onclick={closeDetail}>
+			{#if selectedIndex > 0}
+				<button class="nav-btn nav-prev" onclick={(e) => { e.stopPropagation(); navigatePhoto(-1); }} aria-label="Previous">
+					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<polyline points="15 18 9 12 15 6" />
+					</svg>
+				</button>
+			{/if}
+
+			{#if selectedIndex < allPhotos.length - 1}
+				<button class="nav-btn nav-next" onclick={(e) => { e.stopPropagation(); navigatePhoto(1); }} aria-label="Next">
+					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<polyline points="9 18 15 12 9 6" />
+					</svg>
+				</button>
+			{/if}
+
 			<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 			<div class="photo-detail-card" onclick={(e) => e.stopPropagation()}>
 				<button class="close-btn" aria-label="Close" onclick={closeDetail}>
@@ -147,12 +194,7 @@
 						{/if}
 					</h3>
 					<p class="detail-filename">{selectedPhoto.original_filename}</p>
-					{#if selectedPhoto.estimated_year && !selectedPhoto.tagged_year}
-						<p class="detail-estimate">Estimated year based on age analysis</p>
-					{/if}
-					{#if selectedPhoto.tagged_year}
-						<p class="detail-tagged">User-confirmed year</p>
-					{/if}
+					<p class="detail-counter">{selectedIndex + 1} / {allPhotos.length}</p>
 				</div>
 			</div>
 		</div>
@@ -350,5 +392,41 @@
 	.detail-tagged {
 		color: var(--success);
 		font-size: 0.85rem;
+	}
+
+	.detail-counter {
+		color: var(--text-muted);
+		font-size: 0.8rem;
+		margin-top: 4px;
+	}
+
+	.nav-btn {
+		position: fixed;
+		top: 50%;
+		transform: translateY(-50%);
+		background: rgba(255, 255, 255, 0.15);
+		border: none;
+		border-radius: 50%;
+		width: 52px;
+		height: 52px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		color: white;
+		z-index: 1001;
+		transition: background 200ms ease;
+	}
+
+	.nav-btn:hover {
+		background: rgba(255, 255, 255, 0.3);
+	}
+
+	.nav-prev {
+		left: 16px;
+	}
+
+	.nav-next {
+		right: 16px;
 	}
 </style>
