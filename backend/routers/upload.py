@@ -41,6 +41,18 @@ async def upload_photos(request: Request, files: list[UploadFile] = File(...)):
             try:
                 content = await file.read()
 
+                # Duplicate detection (same filename + same size)
+                existing = await conn.fetchval(
+                    "SELECT id FROM photos WHERE user_id = $1 AND original_filename = $2 AND file_size = $3",
+                    user_id, file.filename, len(content),
+                )
+                if existing:
+                    errors.append({
+                        "filename": file.filename,
+                        "error": "Duplicate photo (already uploaded)",
+                    })
+                    continue
+
                 if not validate_file_size(len(content)):
                     errors.append({
                         "filename": file.filename,
@@ -90,6 +102,25 @@ async def upload_photos(request: Request, files: list[UploadFile] = File(...)):
                     exif_data.get("date"), exif_data.get("orientation", 1),
                 )
 
+                # Auto-tag with EXIF date if available
+                exif_date_str = exif_data.get("date")
+                auto_tagged_year = None
+                auto_tagged_month = None
+                if exif_date_str:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(exif_date_str)
+                        auto_tagged_year = dt.year
+                        auto_tagged_month = dt.month
+                        await conn.execute(
+                            """INSERT INTO tags (photo_id, year, month)
+                               VALUES ($1, $2, $3)
+                               ON CONFLICT (photo_id) DO NOTHING""",
+                            photo_id, dt.year, dt.month,
+                        )
+                    except Exception:
+                        pass
+
                 results.append({
                     "id": photo_id,
                     "filename": stored_filename,
@@ -102,6 +133,8 @@ async def upload_photos(request: Request, files: list[UploadFile] = File(...)):
                     "orientation": exif_data.get("orientation", 1),
                     "orientation_label": exif_data.get("orientation_label", "Normal"),
                     "had_exif": exif_data.get("had_exif", False),
+                    "auto_tagged_year": auto_tagged_year,
+                    "auto_tagged_month": auto_tagged_month,
                 })
 
             except HTTPException:
@@ -160,6 +193,42 @@ async def rotate_photo(photo_id: str, request: Request):
             "height": new_height,
             "url": f"/data/{username}/uploads/{row['stored_filename']}",
         }
+
+
+@router.delete("/{photo_id}")
+async def delete_photo(photo_id: str, request: Request):
+    """Delete a single photo and its associated data."""
+    user_id = request.state.user_id
+    username = request.state.username
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT stored_filename FROM photos WHERE id = $1 AND user_id = $2",
+            photo_id, user_id,
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Photo not found")
+
+        user_dir = get_user_dir(username)
+        
+        # Delete face crops
+        face_rows = await conn.fetch(
+            "SELECT crop_path FROM faces WHERE photo_id = $1", photo_id
+        )
+        for face_row in face_rows:
+            crop_full = os.path.join(user_dir, face_row["crop_path"])
+            if os.path.exists(crop_full):
+                os.remove(crop_full)
+
+        # Delete the photo file
+        file_path = os.path.join(user_dir, "uploads", row["stored_filename"])
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+        # Delete from DB (cascades to faces, tags, timeline_entries, age_estimates)
+        await conn.execute("DELETE FROM photos WHERE id = $1", photo_id)
+
+        return {"status": "deleted", "photo_id": photo_id}
 
 
 @router.get("/list")

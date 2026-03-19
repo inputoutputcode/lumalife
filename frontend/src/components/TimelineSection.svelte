@@ -58,14 +58,15 @@
 </script>
 
 <section class="timeline-section" bind:this={sectionEl}>
-	<div
-		class="timeline-dot"
-		style="width: {getDotSize(era.photos.length)}px; height: {getDotSize(era.photos.length)}px;"
-		title="{era.photos.length} photos"
-	></div>
+	<div class="timeline-marker">
+		<div
+			class="timeline-dot"
+			style="width: {getDotSize(era.photos.length)}px; height: {getDotSize(era.photos.length)}px;"
+		></div>
+		<span class="timeline-year-label">{era.label}</span>
+	</div>
 
 	<div class="era-info">
-		<h2 class="era-title">{era.label}</h2>
 		<span class="era-count">{era.photos.length} photo{era.photos.length !== 1 ? 's' : ''}</span>
 	</div>
 
@@ -100,35 +101,39 @@
 		padding: 0 0 48px 0;
 	}
 
-	.timeline-dot {
+	.timeline-marker {
 		position: absolute;
 		left: -30px;
-		top: 6px;
+		top: 0;
 		transform: translateX(-50%);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		z-index: 2;
+	}
+
+	.timeline-dot {
 		border-radius: 50%;
 		background: var(--accent);
 		border: 3px solid var(--bg-primary);
 		box-shadow: 0 0 0 2px var(--accent);
-		z-index: 2;
 		transition: transform 200ms ease;
 	}
 
+	.timeline-year-label {
+		font-size: 0.7rem;
+		font-weight: 700;
+		color: var(--accent);
+		margin-top: 4px;
+		white-space: nowrap;
+	}
+
 	.timeline-section:hover .timeline-dot {
-		transform: translateX(-50%) scale(1.15);
+		transform: scale(1.15);
 	}
 
 	.era-info {
-		display: flex;
-		align-items: baseline;
-		gap: 12px;
-		margin-bottom: 16px;
-	}
-
-	.era-title {
-		font-size: 1.4rem;
-		color: var(--text-primary);
-		font-weight: 600;
-		margin: 0;
+		margin-bottom: 12px;
 	}
 
 	.era-count {

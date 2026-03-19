@@ -58,6 +58,10 @@ export const api = {
 		return request('POST', `/photos/${photoId}/rotate`);
 	},
 
+	deletePhoto(photoId) {
+		return request('DELETE', `/photos/${photoId}`);
+	},
+
 	// Processing
 	startProcessing() {
 		return request('POST', '/photos/process');
