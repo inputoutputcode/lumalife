@@ -1,21 +1,25 @@
 import json
-import os
 
 import numpy as np
 from sklearn.cluster import DBSCAN
 
-def load_embeddings(face_records: list[dict], user_dir: str) -> tuple[list[str], np.ndarray]:
-    """Load embeddings from disk for clustering."""
+
+def load_embeddings(face_records: list[dict]) -> tuple[list[str], np.ndarray]:
+    """Load embeddings from face records (from DB query results).
+
+    face_records: list of dicts with 'face_id' and 'embedding' (list[float] or JSON string).
+    """
     face_ids = []
     embeddings = []
 
     for face in face_records:
-        embedding_path = os.path.join(user_dir, face["embedding_path"])
-        if not os.path.exists(embedding_path):
+        embedding = face.get("embedding")
+        if embedding is None:
             continue
 
-        with open(embedding_path, "r") as f:
-            embedding = json.load(f)
+        # Handle string (from DB vector::text cast) or list
+        if isinstance(embedding, str):
+            embedding = json.loads(embedding)
 
         if embedding and len(embedding) > 0:
             face_ids.append(face["face_id"])
@@ -40,7 +44,6 @@ def cluster_faces(face_ids: list[str], embeddings: np.ndarray) -> dict[str, int]
     normalized = embeddings / norms
 
     # Cosine distance via DBSCAN
-    # eps=0.5 for cosine distance is a reasonable threshold for same-person
     clustering = DBSCAN(
         eps=0.68,
         min_samples=2,

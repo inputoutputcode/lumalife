@@ -1,13 +1,10 @@
 import os
 import uuid
-import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from PIL import Image
-
-# DATA_DIR is now passed per-call via user_dir parameter
 
 # Thread pool for CPU-bound DeepFace operations
 _executor = ThreadPoolExecutor(max_workers=3)
@@ -113,7 +110,10 @@ async def extract_embedding(crop_path: str) -> list[float] | None:
 
 
 async def process_single_photo(photo_id: str, stored_filename: str, user_dir: str) -> list[dict]:
-    """Detect faces and extract embeddings for a single photo."""
+    """Detect faces and extract embeddings for a single photo.
+
+    Returns list of face dicts with 'embedding' as a list of floats (stored in DB, not files).
+    """
     image_path = os.path.join(user_dir, "uploads", stored_filename)
 
     if not os.path.exists(image_path):
@@ -124,16 +124,6 @@ async def process_single_photo(photo_id: str, stored_filename: str, user_dir: st
     for face in faces:
         crop_full_path = os.path.join(user_dir, face["crop_path"])
         embedding = await extract_embedding(crop_full_path)
-
-        if embedding is not None:
-            embedding_filename = f"{face['face_id']}.json"
-            embedding_path = os.path.join(user_dir, "embeddings", embedding_filename)
-            with open(embedding_path, "w") as f:
-                json.dump(embedding, f)
-            face["embedding_path"] = f"embeddings/{embedding_filename}"
-            face["embedding"] = embedding
-        else:
-            face["embedding_path"] = ""
-            face["embedding"] = None
+        face["embedding"] = embedding  # list[float] or None
 
     return faces

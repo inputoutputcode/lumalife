@@ -1,12 +1,10 @@
 import asyncio
 import json
-import os
-from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
-from models.schema import get_db, get_user_dir
+from models.schema import get_pool, get_or_create_user, get_user_dir, _sanitize_username
 from services.face_detection import process_single_photo
 from services.clustering import load_embeddings, cluster_faces, get_cluster_stats
 from services.age_estimation import estimate_age
@@ -39,8 +37,8 @@ async def process_stream(request: Request, user: str | None = None):
     """SSE stream for processing progress."""
     # SSE (EventSource) can't send headers, so accept user from query param too
     username = user if user else request.state.username
-    from models.schema import _sanitize_username
     username = _sanitize_username(username)
+    user_id = await get_or_create_user(username)
     user_dir = get_user_dir(username)
     _processing_lock = _get_lock(username)
 
@@ -50,183 +48,178 @@ async def process_stream(request: Request, user: str | None = None):
             return
 
         async with _processing_lock:
-            db = await get_db(username)
-            try:
-                # Get unprocessed photos
-                cursor = await db.execute(
-                    "SELECT id, stored_filename FROM photos WHERE processed = 0"
-                )
-                photos = await cursor.fetchall()
-                total = len(photos)
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                try:
+                    # Get unprocessed photos
+                    photos = await conn.fetch(
+                        "SELECT id, stored_filename FROM photos WHERE user_id = $1 AND processed = FALSE",
+                        user_id,
+                    )
+                    total = len(photos)
 
-                if total == 0:
-                    # Check if we have any photos at all
-                    cursor = await db.execute("SELECT COUNT(*) FROM photos")
-                    count = (await cursor.fetchone())[0]
-                    if count == 0:
-                        yield {"event": "error", "data": json.dumps({"error": "No photos uploaded yet"})}
-                        return
-                    yield {"event": "info", "data": json.dumps({"message": "All photos already processed. Re-running clustering..."})}
+                    if total == 0:
+                        # Check if we have any photos at all
+                        count = await conn.fetchval(
+                            "SELECT COUNT(*) FROM photos WHERE user_id = $1", user_id
+                        )
+                        if count == 0:
+                            yield {"event": "error", "data": json.dumps({"error": "No photos uploaded yet"})}
+                            return
+                        yield {"event": "info", "data": json.dumps({"message": "All photos already processed. Re-running clustering..."})}
 
-                yield {
-                    "event": "start",
-                    "data": json.dumps({"total": total, "phase": "face_detection"}),
-                }
+                    yield {
+                        "event": "start",
+                        "data": json.dumps({"total": total, "phase": "face_detection"}),
+                    }
 
-                # Phase 1: Face detection + embedding extraction
-                all_faces_for_clustering = []
-                semaphore = asyncio.Semaphore(3)  # Concurrency limit
-
-                async def process_with_limit(photo_id, filename, index):
-                    async with semaphore:
+                    # Phase 1: Face detection + embedding extraction
+                    for i, photo in enumerate(photos):
+                        photo_id = photo["id"]
+                        filename = photo["stored_filename"]
                         try:
                             faces = await process_single_photo(photo_id, filename, user_dir)
                             # Store faces in DB
                             for face in faces:
-                                await db.execute(
-                                    """INSERT OR REPLACE INTO faces
-                                       (id, photo_id, crop_path, embedding_path,
-                                        bbox_x, bbox_y, bbox_w, bbox_h, confidence)
-                                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                                    (
-                                        face["face_id"],
-                                        photo_id,
-                                        face["crop_path"],
-                                        face.get("embedding_path", ""),
-                                        face["bbox"]["x"],
-                                        face["bbox"]["y"],
-                                        face["bbox"]["w"],
-                                        face["bbox"]["h"],
-                                        face["confidence"],
-                                    ),
+                                embedding = face.get("embedding")
+                                embedding_str = None
+                                if embedding is not None:
+                                    embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
+
+                                await conn.execute(
+                                    """INSERT INTO faces
+                                       (id, photo_id, crop_path,
+                                        bbox_x, bbox_y, bbox_w, bbox_h, confidence, embedding)
+                                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector)
+                                       ON CONFLICT (id) DO UPDATE SET
+                                           crop_path = $3, bbox_x = $4, bbox_y = $5,
+                                           bbox_w = $6, bbox_h = $7, confidence = $8,
+                                           embedding = $9::vector""",
+                                    face["face_id"],
+                                    photo_id,
+                                    face["crop_path"],
+                                    face["bbox"]["x"],
+                                    face["bbox"]["y"],
+                                    face["bbox"]["w"],
+                                    face["bbox"]["h"],
+                                    face["confidence"],
+                                    embedding_str,
                                 )
 
-                                if face.get("embedding_path"):
-                                    all_faces_for_clustering.append({
-                                        "face_id": face["face_id"],
-                                        "embedding_path": face["embedding_path"],
-                                        "photo_id": photo_id,
-                                    })
-
-                            await db.execute(
-                                "UPDATE photos SET processed = 1 WHERE id = ?",
-                                (photo_id,),
+                            await conn.execute(
+                                "UPDATE photos SET processed = TRUE WHERE id = $1",
+                                photo_id,
                             )
-                            await db.commit()
 
-                            return {
+                            result = {
                                 "photo_id": photo_id,
                                 "faces_found": len(faces),
-                                "index": index,
+                                "index": i,
                             }
                         except asyncio.TimeoutError:
-                            return {
+                            result = {
                                 "photo_id": photo_id,
                                 "faces_found": 0,
-                                "index": index,
+                                "index": i,
                                 "error": "timeout",
                             }
                         except Exception as e:
-                            return {
+                            result = {
                                 "photo_id": photo_id,
                                 "faces_found": 0,
-                                "index": index,
+                                "index": i,
                                 "error": str(e),
                             }
 
-                # Process in batches for progress reporting
-                for i, photo in enumerate(photos):
-                    result = await process_with_limit(photo[0], photo[1], i)
-                    yield {
-                        "event": "progress",
-                        "data": json.dumps({
-                            "phase": "face_detection",
-                            "current": i + 1,
-                            "total": total,
-                            "detail": result,
-                        }),
-                    }
-
-                # Also include already-processed faces for clustering
-                cursor = await db.execute(
-                    "SELECT id as face_id, embedding_path, photo_id FROM faces WHERE embedding_path != ''"
-                )
-                existing_faces = await cursor.fetchall()
-                existing_face_ids = {f["face_id"] for f in all_faces_for_clustering}
-                for row in existing_faces:
-                    if row[0] not in existing_face_ids:
-                        all_faces_for_clustering.append({
-                            "face_id": row[0],
-                            "embedding_path": row[1],
-                            "photo_id": row[2],
-                        })
-
-                # Phase 2: Clustering
-                yield {
-                    "event": "phase",
-                    "data": json.dumps({"phase": "clustering", "total_faces": len(all_faces_for_clustering)}),
-                }
-
-                if len(all_faces_for_clustering) > 0:
-                    face_ids, embeddings = load_embeddings(all_faces_for_clustering, user_dir)
-
-                    if len(face_ids) > 0:
-                        assignments = cluster_faces(face_ids, embeddings)
-
-                        # Clear old clusters
-                        await db.execute("DELETE FROM clusters")
-                        await db.execute("UPDATE faces SET cluster_id = NULL, is_target = 0")
-
-                        # Store cluster assignments
-                        cluster_counts = {}
-                        for face_id, cluster_id in assignments.items():
-                            if cluster_id >= 0:
-                                await db.execute(
-                                    "UPDATE faces SET cluster_id = ? WHERE id = ?",
-                                    (cluster_id, face_id),
-                                )
-                                cluster_counts[cluster_id] = cluster_counts.get(cluster_id, 0) + 1
-
-                        for cluster_id, count in cluster_counts.items():
-                            await db.execute(
-                                "INSERT INTO clusters (id, face_count) VALUES (?, ?)",
-                                (cluster_id, count),
-                            )
-
-                        await db.commit()
-
-                        stats = get_cluster_stats(assignments)
                         yield {
-                            "event": "clustering_done",
+                            "event": "progress",
                             "data": json.dumps({
-                                "clusters": stats,
-                                "total_faces": len(face_ids),
-                                "unclustered": sum(1 for v in assignments.values() if v == -1),
+                                "phase": "face_detection",
+                                "current": i + 1,
+                                "total": total,
+                                "detail": result,
                             }),
                         }
+
+                    # Load all faces with embeddings for this user (for clustering)
+                    all_face_rows = await conn.fetch(
+                        """SELECT f.id as face_id, f.embedding::text as embedding
+                           FROM faces f
+                           JOIN photos p ON f.photo_id = p.id
+                           WHERE p.user_id = $1 AND f.embedding IS NOT NULL""",
+                        user_id,
+                    )
+                    all_faces_for_clustering = [
+                        {"face_id": r["face_id"], "embedding": r["embedding"]}
+                        for r in all_face_rows
+                    ]
+
+                    # Phase 2: Clustering
+                    yield {
+                        "event": "phase",
+                        "data": json.dumps({"phase": "clustering", "total_faces": len(all_faces_for_clustering)}),
+                    }
+
+                    if len(all_faces_for_clustering) > 0:
+                        face_ids, embeddings = load_embeddings(all_faces_for_clustering)
+
+                        if len(face_ids) > 0:
+                            assignments = cluster_faces(face_ids, embeddings)
+
+                            # Clear old clusters for this user
+                            await conn.execute("DELETE FROM clusters WHERE user_id = $1", user_id)
+                            await conn.execute(
+                                """UPDATE faces SET cluster_id = NULL, is_target = FALSE
+                                   WHERE photo_id IN (SELECT id FROM photos WHERE user_id = $1)""",
+                                user_id,
+                            )
+
+                            # Store cluster assignments
+                            cluster_counts = {}
+                            for face_id, cluster_id in assignments.items():
+                                if cluster_id >= 0:
+                                    await conn.execute(
+                                        "UPDATE faces SET cluster_id = $1 WHERE id = $2",
+                                        cluster_id, face_id,
+                                    )
+                                    cluster_counts[cluster_id] = cluster_counts.get(cluster_id, 0) + 1
+
+                            for cluster_id, count in cluster_counts.items():
+                                await conn.execute(
+                                    "INSERT INTO clusters (id, user_id, face_count) VALUES ($1, $2, $3)",
+                                    cluster_id, user_id, count,
+                                )
+
+                            stats = get_cluster_stats(assignments)
+                            yield {
+                                "event": "clustering_done",
+                                "data": json.dumps({
+                                    "clusters": stats,
+                                    "total_faces": len(face_ids),
+                                    "unclustered": sum(1 for v in assignments.values() if v == -1),
+                                }),
+                            }
+                        else:
+                            yield {
+                                "event": "clustering_done",
+                                "data": json.dumps({"clusters": [], "total_faces": 0, "unclustered": 0}),
+                            }
                     else:
                         yield {
                             "event": "clustering_done",
                             "data": json.dumps({"clusters": [], "total_faces": 0, "unclustered": 0}),
                         }
-                else:
+
                     yield {
-                        "event": "clustering_done",
-                        "data": json.dumps({"clusters": [], "total_faces": 0, "unclustered": 0}),
+                        "event": "complete",
+                        "data": json.dumps({"status": "done"}),
                     }
 
-                yield {
-                    "event": "complete",
-                    "data": json.dumps({"status": "done"}),
-                }
-
-            except Exception as e:
-                yield {
-                    "event": "error",
-                    "data": json.dumps({"error": str(e)}),
-                }
-            finally:
-                await db.close()
+                except Exception as e:
+                    yield {
+                        "event": "error",
+                        "data": json.dumps({"error": str(e)}),
+                    }
 
     return EventSourceResponse(event_generator())
 
@@ -234,109 +227,117 @@ async def process_stream(request: Request, user: str | None = None):
 @router.get("/clusters")
 async def get_clusters(request: Request):
     """Get face clusters with representative face crops."""
-    username = request.state.username
-    db = await get_db(username)
-    try:
-        cursor = await db.execute(
-            "SELECT id, face_count, is_target, confirmed_at FROM clusters ORDER BY face_count DESC"
+    user_id = request.state.user_id
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        clusters = await conn.fetch(
+            "SELECT id, face_count, is_target, confirmed_at FROM clusters WHERE user_id = $1 ORDER BY face_count DESC",
+            user_id,
         )
-        clusters = await cursor.fetchall()
 
         result = []
         for cluster in clusters:
-            # Get face crops for this cluster
-            cursor2 = await db.execute(
+            faces = await conn.fetch(
                 """SELECT f.id, f.crop_path, f.photo_id, f.confidence
                    FROM faces f
-                   WHERE f.cluster_id = ?
+                   WHERE f.cluster_id = $1
+                     AND f.photo_id IN (SELECT id FROM photos WHERE user_id = $2)
                    ORDER BY f.confidence DESC""",
-                (cluster[0],),
+                cluster["id"], user_id,
             )
-            faces = await cursor2.fetchall()
 
             result.append({
-                "cluster_id": cluster[0],
-                "face_count": cluster[1],
-                "is_target": bool(cluster[2]),
-                "confirmed_at": cluster[3],
+                "cluster_id": cluster["id"],
+                "face_count": cluster["face_count"],
+                "is_target": cluster["is_target"],
+                "confirmed_at": cluster["confirmed_at"].isoformat() if cluster["confirmed_at"] else None,
                 "faces": [
                     {
-                        "face_id": f[0],
-                        "crop_url": f"/data/{f[1]}",
-                        "photo_id": f[2],
-                        "confidence": f[3],
+                        "face_id": f["id"],
+                        "crop_url": f"/data/{f['crop_path']}",
+                        "photo_id": f["photo_id"],
+                        "confidence": f["confidence"],
                     }
                     for f in faces
                 ],
             })
 
         return {"clusters": result}
-    finally:
-        await db.close()
 
 
 @router.post("/clusters/{cluster_id}/confirm")
 async def confirm_cluster(cluster_id: int, request: Request):
     """Confirm a cluster as the target person."""
-    username = request.state.username
-    db = await get_db(username)
-    try:
-        # Reset any previous target
-        await db.execute("UPDATE clusters SET is_target = 0, confirmed_at = NULL")
-        await db.execute("UPDATE faces SET is_target = 0")
+    user_id = request.state.user_id
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # Reset any previous target for this user
+            await conn.execute(
+                "UPDATE clusters SET is_target = FALSE, confirmed_at = NULL WHERE user_id = $1",
+                user_id,
+            )
+            await conn.execute(
+                "UPDATE faces SET is_target = FALSE WHERE photo_id IN (SELECT id FROM photos WHERE user_id = $1)",
+                user_id,
+            )
 
-        # Set new target
-        await db.execute(
-            "UPDATE clusters SET is_target = 1, confirmed_at = datetime('now') WHERE id = ?",
-            (cluster_id,),
-        )
-        await db.execute(
-            "UPDATE faces SET is_target = 1 WHERE cluster_id = ?",
-            (cluster_id,),
-        )
-        await db.commit()
+            # Set new target
+            await conn.execute(
+                "UPDATE clusters SET is_target = TRUE, confirmed_at = NOW() WHERE id = $1 AND user_id = $2",
+                cluster_id, user_id,
+            )
+            await conn.execute(
+                """UPDATE faces SET is_target = TRUE
+                   WHERE cluster_id = $1
+                     AND photo_id IN (SELECT id FROM photos WHERE user_id = $2)""",
+                cluster_id, user_id,
+            )
 
         # Get the count
-        cursor = await db.execute(
-            "SELECT COUNT(*) FROM faces WHERE cluster_id = ?", (cluster_id,)
+        count = await conn.fetchval(
+            """SELECT COUNT(*) FROM faces
+               WHERE cluster_id = $1
+                 AND photo_id IN (SELECT id FROM photos WHERE user_id = $2)""",
+            cluster_id, user_id,
         )
-        count = (await cursor.fetchone())[0]
 
         return {"status": "confirmed", "cluster_id": cluster_id, "face_count": count}
-    finally:
-        await db.close()
 
 
 @router.post("/estimate-ages")
 async def estimate_ages(request: Request):
     """Run age estimation on all target person face crops."""
     username = request.state.username
-    db = await get_db(username)
-    try:
-        cursor = await db.execute(
+    user_id = request.state.user_id
+    user_dir = get_user_dir(username)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        target_faces = await conn.fetch(
             """SELECT f.id, f.crop_path, f.photo_id
                FROM faces f
-               WHERE f.is_target = 1"""
+               JOIN photos p ON f.photo_id = p.id
+               WHERE f.is_target = TRUE AND p.user_id = $1""",
+            user_id,
         )
-        target_faces = await cursor.fetchall()
 
         if not target_faces:
             raise HTTPException(status_code=400, detail="No target person confirmed yet")
 
         results = []
         for face in target_faces:
-            face_id = face[0]
-            crop_path = face[1]
-            photo_id = face[2]
+            face_id = face["id"]
+            crop_path = face["crop_path"]
+            photo_id = face["photo_id"]
 
-            user_dir = get_user_dir(username)
             age = await estimate_age(crop_path, user_dir)
             if age is not None:
-                await db.execute(
-                    """INSERT OR REPLACE INTO age_estimates
-                       (photo_id, face_id, estimated_age, method)
-                       VALUES (?, ?, ?, 'deepface')""",
-                    (photo_id, face_id, age),
+                await conn.execute(
+                    """INSERT INTO age_estimates (photo_id, face_id, estimated_age, method)
+                       VALUES ($1, $2, $3, 'deepface')
+                       ON CONFLICT (photo_id) DO UPDATE SET
+                           face_id = $2, estimated_age = $3, method = 'deepface'""",
+                    photo_id, face_id, age,
                 )
                 results.append({
                     "photo_id": photo_id,
@@ -344,7 +345,4 @@ async def estimate_ages(request: Request):
                     "estimated_age": age,
                 })
 
-        await db.commit()
         return {"estimates": results, "count": len(results)}
-    finally:
-        await db.close()

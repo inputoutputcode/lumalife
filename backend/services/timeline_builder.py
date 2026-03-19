@@ -1,50 +1,51 @@
-from models.schema import get_db
+from models.schema import get_pool
 from services.age_estimation import build_age_year_mapping, assign_era_buckets
 
 
-async def build_timeline(username: str = "default") -> dict:
+async def build_timeline(user_id: int) -> dict:
     """Build the full timeline from current data."""
-    db = await get_db(username)
-    try:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
         # Get all target person faces with their photos
-        cursor = await db.execute("""
+        target_photos = await conn.fetch("""
             SELECT DISTINCT f.photo_id, p.stored_filename, p.exif_date,
                    p.width, p.height, p.original_filename
             FROM faces f
             JOIN photos p ON f.photo_id = p.id
-            WHERE f.is_target = 1
-        """)
-        target_photos = await cursor.fetchall()
+            WHERE f.is_target = TRUE AND p.user_id = $1
+        """, user_id)
 
         if not target_photos:
             return {"eras": [], "total_photos": 0}
 
         photo_map = {}
         for row in target_photos:
-            photo_map[row[0]] = {
-                "photo_id": row[0],
-                "stored_filename": row[1],
-                "exif_date": row[2],
-                "width": row[3],
-                "height": row[4],
-                "original_filename": row[5],
-                "url": f"/data/uploads/{row[1]}",
+            photo_map[row["photo_id"]] = {
+                "photo_id": row["photo_id"],
+                "stored_filename": row["stored_filename"],
+                "exif_date": row["exif_date"],
+                "width": row["width"],
+                "height": row["height"],
+                "original_filename": row["original_filename"],
+                "url": f"/data/uploads/{row['stored_filename']}",
             }
 
         # Get user tags
-        cursor = await db.execute("SELECT photo_id, year FROM tags")
-        tag_rows = await cursor.fetchall()
-        tagged_photos = [{"photo_id": r[0], "year": r[1]} for r in tag_rows]
+        tag_rows = await conn.fetch(
+            "SELECT t.photo_id, t.year FROM tags t JOIN photos p ON t.photo_id = p.id WHERE p.user_id = $1",
+            user_id,
+        )
+        tagged_photos = [{"photo_id": r["photo_id"], "year": r["year"]} for r in tag_rows]
 
         # Get age estimates
-        cursor = await db.execute("""
+        age_rows = await conn.fetch("""
             SELECT ae.photo_id, ae.estimated_age, p.exif_date
             FROM age_estimates ae
             JOIN photos p ON ae.photo_id = p.id
-        """)
-        age_rows = await cursor.fetchall()
+            WHERE p.user_id = $1
+        """, user_id)
         age_estimates = [
-            {"photo_id": r[0], "estimated_age": r[1], "exif_date": r[2]}
+            {"photo_id": r["photo_id"], "estimated_age": r["estimated_age"], "exif_date": r["exif_date"]}
             for r in age_rows
         ]
 
@@ -79,31 +80,31 @@ async def build_timeline(username: str = "default") -> dict:
                 "photos": era_photos,
             })
 
-        # Clear and rebuild timeline_entries
-        await db.execute("DELETE FROM timeline_entries")
+        # Clear and rebuild timeline_entries for this user
+        await conn.execute(
+            "DELETE FROM timeline_entries WHERE photo_id IN (SELECT id FROM photos WHERE user_id = $1)",
+            user_id,
+        )
         sort_order = 0
         for era in era_response:
             for photo in era["photos"]:
-                await db.execute(
-                    """INSERT OR REPLACE INTO timeline_entries
+                await conn.execute(
+                    """INSERT INTO timeline_entries
                        (photo_id, estimated_year, era_label, era_start, era_end, sort_order)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (
-                        photo["photo_id"],
-                        photo.get("estimated_year", 0),
-                        era["label"],
-                        era["era_start"],
-                        era["era_end"],
-                        sort_order,
-                    ),
+                       VALUES ($1, $2, $3, $4, $5, $6)
+                       ON CONFLICT (photo_id) DO UPDATE SET
+                           estimated_year = $2, era_label = $3,
+                           era_start = $4, era_end = $5, sort_order = $6""",
+                    photo["photo_id"],
+                    photo.get("estimated_year", 0),
+                    era["label"],
+                    era["era_start"],
+                    era["era_end"],
+                    sort_order,
                 )
                 sort_order += 1
-
-        await db.commit()
 
         return {
             "eras": era_response,
             "total_photos": sum(len(e["photos"]) for e in era_response),
         }
-    finally:
-        await db.close()

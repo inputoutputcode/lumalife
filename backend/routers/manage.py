@@ -3,7 +3,7 @@ import shutil
 
 from fastapi import APIRouter, Request
 
-from models.schema import get_db, get_user_dir, get_db_path
+from models.schema import get_pool, get_user_dir
 
 router = APIRouter()
 
@@ -12,25 +12,38 @@ router = APIRouter()
 async def delete_all_data(request: Request):
     """Delete all data for current user."""
     username = request.state.username
+    user_id = request.state.user_id
     user_dir = get_user_dir(username)
 
     # Clear directories
-    for subdir in ["uploads", "processed", "embeddings"]:
+    for subdir in ["uploads", "processed"]:
         dir_path = os.path.join(user_dir, subdir)
         if os.path.exists(dir_path):
             shutil.rmtree(dir_path)
             os.makedirs(dir_path, exist_ok=True)
 
-    # Drop and recreate DB
-    db_path = get_db_path(username)
-    for suffix in ["", "-wal", "-shm"]:
-        p = db_path + suffix
-        if os.path.exists(p):
-            os.remove(p)
-
-    # Re-init tables
-    db = await get_db(username)
-    await db.close()
+    # Delete user's data from shared DB (order matters for FK constraints)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "DELETE FROM timeline_entries WHERE photo_id IN (SELECT id FROM photos WHERE user_id = $1)",
+                user_id,
+            )
+            await conn.execute(
+                "DELETE FROM age_estimates WHERE photo_id IN (SELECT id FROM photos WHERE user_id = $1)",
+                user_id,
+            )
+            await conn.execute(
+                "DELETE FROM tags WHERE photo_id IN (SELECT id FROM photos WHERE user_id = $1)",
+                user_id,
+            )
+            await conn.execute(
+                "DELETE FROM faces WHERE photo_id IN (SELECT id FROM photos WHERE user_id = $1)",
+                user_id,
+            )
+            await conn.execute("DELETE FROM clusters WHERE user_id = $1", user_id)
+            await conn.execute("DELETE FROM photos WHERE user_id = $1", user_id)
 
     return {"status": "deleted", "message": "All data has been deleted"}
 
@@ -39,94 +52,129 @@ async def delete_all_data(request: Request):
 async def reprocess(request: Request):
     """Reset processing state so photos can be re-processed."""
     username = request.state.username
+    user_id = request.state.user_id
     user_dir = get_user_dir(username)
-    db = await get_db(username)
-    try:
-        await db.execute("DELETE FROM timeline_entries")
-        await db.execute("DELETE FROM age_estimates")
-        await db.execute("DELETE FROM faces")
-        await db.execute("DELETE FROM clusters")
-        await db.execute("UPDATE photos SET processed = 0")
-        await db.commit()
 
-        for subdir in ["processed", "embeddings"]:
-            dir_path = os.path.join(user_dir, subdir)
-            if os.path.exists(dir_path):
-                shutil.rmtree(dir_path)
-                os.makedirs(dir_path, exist_ok=True)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "DELETE FROM timeline_entries WHERE photo_id IN (SELECT id FROM photos WHERE user_id = $1)",
+                user_id,
+            )
+            await conn.execute(
+                "DELETE FROM age_estimates WHERE photo_id IN (SELECT id FROM photos WHERE user_id = $1)",
+                user_id,
+            )
+            await conn.execute(
+                "DELETE FROM tags WHERE photo_id IN (SELECT id FROM photos WHERE user_id = $1)",
+                user_id,
+            )
+            await conn.execute(
+                "DELETE FROM faces WHERE photo_id IN (SELECT id FROM photos WHERE user_id = $1)",
+                user_id,
+            )
+            await conn.execute("DELETE FROM clusters WHERE user_id = $1", user_id)
+            await conn.execute(
+                "UPDATE photos SET processed = FALSE WHERE user_id = $1", user_id
+            )
 
-        return {"status": "reset", "message": "Processing state reset. Run /api/photos/process to re-process."}
-    finally:
-        await db.close()
+    for subdir in ["processed"]:
+        dir_path = os.path.join(user_dir, subdir)
+        if os.path.exists(dir_path):
+            shutil.rmtree(dir_path)
+            os.makedirs(dir_path, exist_ok=True)
+
+    return {"status": "reset", "message": "Processing state reset. Run /api/photos/process to re-process."}
 
 
 @router.get("/data/export")
 async def export_timeline(request: Request):
     """Export timeline data as JSON."""
-    username = request.state.username
-    db = await get_db(username)
-    try:
-        cursor = await db.execute(
-            """SELECT p.id, p.original_filename, p.stored_filename, p.exif_date,
-                      p.width, p.height, p.uploaded_at
-               FROM photos p ORDER BY p.uploaded_at"""
+    user_id = request.state.user_id
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, original_filename, stored_filename, exif_date,
+                      width, height, uploaded_at
+               FROM photos WHERE user_id = $1 ORDER BY uploaded_at""",
+            user_id,
         )
         photos = [
-            {"id": r[0], "original_filename": r[1], "stored_filename": r[2],
-             "exif_date": r[3], "width": r[4], "height": r[5], "uploaded_at": r[6]}
-            for r in await cursor.fetchall()
+            {"id": r["id"], "original_filename": r["original_filename"],
+             "stored_filename": r["stored_filename"], "exif_date": r["exif_date"],
+             "width": r["width"], "height": r["height"],
+             "uploaded_at": r["uploaded_at"].isoformat() if r["uploaded_at"] else None}
+            for r in rows
         ]
 
-        cursor = await db.execute("SELECT photo_id, year FROM tags")
-        tags = [{"photo_id": r[0], "year": r[1]} for r in await cursor.fetchall()]
+        rows = await conn.fetch(
+            "SELECT t.photo_id, t.year FROM tags t JOIN photos p ON t.photo_id = p.id WHERE p.user_id = $1",
+            user_id,
+        )
+        tags = [{"photo_id": r["photo_id"], "year": r["year"]} for r in rows]
 
-        cursor = await db.execute(
-            "SELECT photo_id, estimated_age, estimated_year, method FROM age_estimates"
+        rows = await conn.fetch(
+            """SELECT ae.photo_id, ae.estimated_age, ae.estimated_year, ae.method
+               FROM age_estimates ae JOIN photos p ON ae.photo_id = p.id
+               WHERE p.user_id = $1""",
+            user_id,
         )
         ages = [
-            {"photo_id": r[0], "estimated_age": r[1], "estimated_year": r[2], "method": r[3]}
-            for r in await cursor.fetchall()
+            {"photo_id": r["photo_id"], "estimated_age": r["estimated_age"],
+             "estimated_year": r["estimated_year"], "method": r["method"]}
+            for r in rows
         ]
 
-        cursor = await db.execute(
-            "SELECT photo_id, estimated_year, era_label, era_start, era_end, sort_order FROM timeline_entries ORDER BY sort_order"
+        rows = await conn.fetch(
+            """SELECT te.photo_id, te.estimated_year, te.era_label, te.era_start, te.era_end, te.sort_order
+               FROM timeline_entries te JOIN photos p ON te.photo_id = p.id
+               WHERE p.user_id = $1 ORDER BY te.sort_order""",
+            user_id,
         )
         timeline = [
-            {"photo_id": r[0], "estimated_year": r[1], "era_label": r[2],
-             "era_start": r[3], "era_end": r[4], "sort_order": r[5]}
-            for r in await cursor.fetchall()
+            {"photo_id": r["photo_id"], "estimated_year": r["estimated_year"],
+             "era_label": r["era_label"], "era_start": r["era_start"],
+             "era_end": r["era_end"], "sort_order": r["sort_order"]}
+            for r in rows
         ]
 
         return {"version": "1.0", "photos": photos, "tags": tags,
                 "age_estimates": ages, "timeline": timeline}
-    finally:
-        await db.close()
 
 
 @router.get("/data/stats")
 async def get_stats(request: Request):
     """Get current data statistics."""
-    username = request.state.username
-    db = await get_db(username)
-    try:
+    user_id = request.state.user_id
+    pool = await get_pool()
+    async with pool.acquire() as conn:
         stats = {}
-        for table, key in [
-            ("photos", "total_photos"),
-            ("faces", "total_faces"),
-            ("clusters", "total_clusters"),
-            ("tags", "tagged_photos"),
-            ("age_estimates", "age_estimates"),
-            ("timeline_entries", "timeline_entries"),
-        ]:
-            cursor = await db.execute(f"SELECT COUNT(*) FROM {table}")
-            stats[key] = (await cursor.fetchone())[0]
-
-        cursor = await db.execute("SELECT COUNT(*) FROM photos WHERE processed = 1")
-        stats["processed_photos"] = (await cursor.fetchone())[0]
-
-        cursor = await db.execute("SELECT COUNT(*) FROM faces WHERE is_target = 1")
-        stats["target_faces"] = (await cursor.fetchone())[0]
-
+        stats["total_photos"] = await conn.fetchval(
+            "SELECT COUNT(*) FROM photos WHERE user_id = $1", user_id
+        )
+        stats["total_faces"] = await conn.fetchval(
+            "SELECT COUNT(*) FROM faces f JOIN photos p ON f.photo_id = p.id WHERE p.user_id = $1", user_id
+        )
+        stats["total_clusters"] = await conn.fetchval(
+            "SELECT COUNT(*) FROM clusters WHERE user_id = $1", user_id
+        )
+        stats["tagged_photos"] = await conn.fetchval(
+            "SELECT COUNT(*) FROM tags t JOIN photos p ON t.photo_id = p.id WHERE p.user_id = $1", user_id
+        )
+        stats["age_estimates"] = await conn.fetchval(
+            "SELECT COUNT(*) FROM age_estimates ae JOIN photos p ON ae.photo_id = p.id WHERE p.user_id = $1",
+            user_id,
+        )
+        stats["timeline_entries"] = await conn.fetchval(
+            "SELECT COUNT(*) FROM timeline_entries te JOIN photos p ON te.photo_id = p.id WHERE p.user_id = $1",
+            user_id,
+        )
+        stats["processed_photos"] = await conn.fetchval(
+            "SELECT COUNT(*) FROM photos WHERE user_id = $1 AND processed = TRUE", user_id
+        )
+        stats["target_faces"] = await conn.fetchval(
+            "SELECT COUNT(*) FROM faces f JOIN photos p ON f.photo_id = p.id WHERE p.user_id = $1 AND f.is_target = TRUE",
+            user_id,
+        )
         return stats
-    finally:
-        await db.close()
