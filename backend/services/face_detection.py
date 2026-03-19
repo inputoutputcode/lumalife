@@ -148,15 +148,14 @@ async def process_single_photo(photo_id: str, stored_filename: str, user_dir: st
             face["embedding"] = embedding
         return faces
 
-    # No confident faces — try rotations
+    # No confident faces — try 90° and 270° (most common rotation issues)
     best_faces = faces
     best_rotation = 0
     backup_path = image_path + ".bak"
     shutil.copy2(image_path, backup_path)
 
     try:
-        for rotation in [90, 180, 270]:
-            # Restore original, then apply rotation
+        for rotation in [90, 270]:
             shutil.copy2(backup_path, image_path)
             await loop.run_in_executor(_executor, _rotate_and_save, image_path, rotation)
 
@@ -167,6 +166,7 @@ async def process_single_photo(photo_id: str, stored_filename: str, user_dir: st
                 best_faces = trial_faces
                 best_rotation = rotation
                 best_confident = confident
+                break  # Found faces, no need to try more
 
         # Apply the winning rotation (or restore original)
         shutil.copy2(backup_path, image_path)
