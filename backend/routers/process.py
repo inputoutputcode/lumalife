@@ -228,6 +228,7 @@ async def process_stream(request: Request, user: str | None = None):
 async def get_clusters(request: Request):
     """Get face clusters with representative face crops."""
     user_id = request.state.user_id
+    username = request.state.username
     pool = await get_pool()
     async with pool.acquire() as conn:
         clusters = await conn.fetch(
@@ -254,7 +255,7 @@ async def get_clusters(request: Request):
                 "faces": [
                     {
                         "face_id": f["id"],
-                        "crop_url": f"/data/{f['crop_path']}",
+                        "crop_url": f"/data/{username}/{f['crop_path']}",
                         "photo_id": f["photo_id"],
                         "confidence": f["confidence"],
                     }

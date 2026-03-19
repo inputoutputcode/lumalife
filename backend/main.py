@@ -45,11 +45,11 @@ app.add_middleware(UserMiddleware)
 os.makedirs(os.path.join(DATA_DIR, "users"), exist_ok=True)
 
 
-@app.get("/data/{path:path}")
-async def serve_user_data(path: str, request: Request):
-    """Serve user-specific data files."""
-    username = request.state.username
-    user_dir = get_user_dir(username)
+@app.get("/data/{username}/{path:path}")
+async def serve_user_data(username: str, path: str):
+    """Serve user-specific data files by username in URL."""
+    safe_username = _sanitize_username(username)
+    user_dir = get_user_dir(safe_username)
     file_path = os.path.join(user_dir, path)
     if not os.path.isfile(file_path):
         return JSONResponse({"detail": "Not found"}, status_code=404)

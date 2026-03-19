@@ -9,11 +9,13 @@ router = APIRouter()
 async def get_timeline(request: Request):
     """Get the full timeline with photos grouped by era."""
     user_id = request.state.user_id
-    return await build_timeline(user_id)
+    username = request.state.username
+    return await build_timeline(user_id, username)
 
 
 @router.post("/timeline/rebuild")
 async def rebuild_timeline(request: Request):
     """Force rebuild the timeline from current data."""
     user_id = request.state.user_id
-    return await build_timeline(user_id)
+    username = request.state.username
+    return await build_timeline(user_id, username)

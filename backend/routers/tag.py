@@ -73,10 +73,10 @@ async def get_target_photos(request: Request):
                 "exif_date": row["exif_date"],
                 "width": row["width"],
                 "height": row["height"],
-                "face_crop_url": f"/data/{row['crop_path']}",
+                "face_crop_url": f"/data/{username}/{row['crop_path']}",
                 "confidence": row["confidence"],
                 "tagged_year": row["tagged_year"],
-                "url": f"/data/uploads/{row['stored_filename']}",
+                "url": f"/data/{username}/uploads/{row['stored_filename']}",
             })
 
         # Tag stats for this user

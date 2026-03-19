@@ -144,6 +144,6 @@ async def list_photos(request: Request):
                 "exif_date": row["exif_date"],
                 "uploaded_at": row["uploaded_at"].isoformat() if row["uploaded_at"] else None,
                 "processed": row["processed"],
-                "url": f"/data/uploads/{row['stored_filename']}",
+                "url": f"/data/{username}/uploads/{row['stored_filename']}",
             })
         return {"photos": photos, "count": len(photos)}

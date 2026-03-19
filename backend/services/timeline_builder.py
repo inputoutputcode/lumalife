@@ -2,7 +2,7 @@ from models.schema import get_pool
 from services.age_estimation import build_age_year_mapping, assign_era_buckets
 
 
-async def build_timeline(user_id: int) -> dict:
+async def build_timeline(user_id: int, username: str = "default") -> dict:
     """Build the full timeline from current data."""
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -27,7 +27,7 @@ async def build_timeline(user_id: int) -> dict:
                 "width": row["width"],
                 "height": row["height"],
                 "original_filename": row["original_filename"],
-                "url": f"/data/uploads/{row['stored_filename']}",
+                "url": f"/data/{username}/uploads/{row['stored_filename']}",
             }
 
         # Get user tags
