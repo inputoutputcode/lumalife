@@ -1,0 +1,21 @@
+{
+  "name": "lumalife-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "3.3.1",
+    "@sveltejs/kit": "2.15.2",
+    "@sveltejs/vite-plugin-svelte": "5.0.3",
+    "svelte": "5.19.9",
+    "vite": "6.0.7"
+  },
+  "dependencies": {
+    "gsap": "3.12.7"
+  },
+  "type": "module"
+}
