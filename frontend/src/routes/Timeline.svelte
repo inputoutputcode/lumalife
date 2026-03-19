@@ -105,6 +105,7 @@
 		<div class="timeline-header">
 			<h2>Your Timeline</h2>
 			<p class="timeline-subtitle">{timelineData.total_photos} photos across {timelineData.eras.length} eras</p>
+		</div>
 		<div class="timeline-container">
 			{#each timelineData.eras as era, i}
 				<div id="era-{i}">
