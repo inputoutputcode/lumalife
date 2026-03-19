@@ -6,13 +6,12 @@ async def build_timeline(user_id: int, username: str = "default") -> dict:
     """Build the full timeline from current data."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Get all target person faces with their photos
+        # Get all user photos (not just face-detected ones)
         target_photos = await conn.fetch("""
-            SELECT DISTINCT f.photo_id, p.stored_filename, p.exif_date,
+            SELECT p.id as photo_id, p.stored_filename, p.exif_date,
                    p.width, p.height, p.original_filename
-            FROM faces f
-            JOIN photos p ON f.photo_id = p.id
-            WHERE f.is_target = TRUE AND p.user_id = $1
+            FROM photos p
+            WHERE p.user_id = $1
         """, user_id)
 
         if not target_photos:

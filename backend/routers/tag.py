@@ -49,21 +49,19 @@ async def untag_photo(photo_id: str, request: Request):
 
 @router.get("/target-photos")
 async def get_target_photos(request: Request):
-    """Get all photos of the target person with tag status."""
+    """Get all user photos with tag status. Shows all photos, not just faces."""
     user_id = request.state.user_id
     username = request.state.username
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT DISTINCT ON (p.id) p.id, p.stored_filename, p.original_filename,
+            SELECT p.id, p.stored_filename, p.original_filename,
                    p.exif_date, p.width, p.height, p.uploaded_at,
-                   f.crop_path, f.confidence,
                    t.year as tagged_year, t.month as tagged_month
-            FROM faces f
-            JOIN photos p ON f.photo_id = p.id
+            FROM photos p
             LEFT JOIN tags t ON p.id = t.photo_id
-            WHERE f.is_target = TRUE AND p.user_id = $1
-            ORDER BY p.id, t.year ASC NULLS LAST, p.uploaded_at ASC
+            WHERE p.user_id = $1
+            ORDER BY t.year ASC NULLS LAST, p.uploaded_at ASC
         """, user_id)
 
         photos = []
@@ -75,14 +73,11 @@ async def get_target_photos(request: Request):
                 "exif_date": row["exif_date"],
                 "width": row["width"],
                 "height": row["height"],
-                "face_crop_url": f"/data/{username}/{row['crop_path']}",
-                "confidence": row["confidence"],
                 "tagged_year": row["tagged_year"],
                 "tagged_month": row["tagged_month"],
                 "url": f"/data/{username}/uploads/{row['stored_filename']}",
             })
 
-        # Tag stats for this user
         tag_count = await conn.fetchval(
             "SELECT COUNT(*) FROM tags t JOIN photos p ON t.photo_id = p.id WHERE p.user_id = $1",
             user_id,
@@ -92,6 +87,6 @@ async def get_target_photos(request: Request):
             "photos": photos,
             "total": len(photos),
             "tagged_count": tag_count,
-            "min_required": 8,
-            "recommended": 15,
+            "min_required": 3,
+            "recommended": 10,
         }

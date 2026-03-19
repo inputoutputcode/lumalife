@@ -118,7 +118,7 @@
 		</div>
 	{:else if targetData && targetData.total === 0}
 		<div class="empty-state">
-			<p>No identified faces yet. Complete the <button class="link-btn" onclick={() => { import('$lib/stores.js').then(m => m.appState.set('identify')); }}>Identify</button> step first.</p>
+			<p>No photos uploaded yet. <button class="link-btn" onclick={() => { import('$lib/stores.js').then(m => m.appState.set('upload')); }}>Upload photos</button> to get started.</p>
 		</div>
 	{:else if targetData}
 		<div class="accuracy-section">
@@ -162,13 +162,7 @@
 							alt={photo.original_filename}
 							loading="lazy"
 						/>
-						<div class="face-crop-overlay">
-							<img
-								src={photo.face_crop_url}
-								alt="Face"
-								class="face-crop"
-							/>
-						</div>
+
 					</div>
 
 					<div class="photo-info">
