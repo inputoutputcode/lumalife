@@ -166,6 +166,9 @@
 							<button class="dropdown-item" onclick={() => goTo('settings')}>
 								⚙️ Settings
 							</button>
+							<button class="dropdown-item signout" onclick={() => { import('$lib/api.js').then(m => { m.clearUsername(); }); currentUser.set(null); appState.set('login'); showUserMenu = false; }}>
+								🚪 Sign Out
+							</button>
 						</div>
 					{/if}
 				</div>
@@ -367,6 +370,11 @@
 
 	.dropdown-item:hover {
 		background: var(--bg-hover);
+	}
+
+	.dropdown-item.signout {
+		border-top: 1px solid var(--border);
+		color: var(--danger);
 	}
 
 	.backdrop {
