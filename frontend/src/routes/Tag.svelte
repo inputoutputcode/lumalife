@@ -57,6 +57,11 @@
 		editingPhotoId = photoId;
 		yearInput = existingYear ? String(existingYear) : '';
 		monthInput = existingMonth ? String(existingMonth) : '';
+		// Focus the year input after DOM update
+		setTimeout(() => {
+			const el = document.querySelector('.year-input');
+			if (el) el.focus();
+		}, 0);
 	}
 
 	function handleClickOutside(e) {
