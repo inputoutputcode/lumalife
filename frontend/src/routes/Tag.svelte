@@ -1,5 +1,6 @@
 <script>
 	import { api } from '$lib/api.js';
+	import { onMount, onDestroy } from 'svelte';
 	import AccuracyMeter from '../components/AccuracyMeter.svelte';
 
 	let { onNext } = $props();
@@ -57,6 +58,22 @@
 		yearInput = existingYear ? String(existingYear) : '';
 		monthInput = existingMonth ? String(existingMonth) : '';
 	}
+
+	function handleClickOutside(e) {
+		if (editingPhotoId && !e.target.closest('.tag-input-row') && !e.target.closest('.btn-secondary')) {
+			editingPhotoId = null;
+			yearInput = '';
+			monthInput = '';
+		}
+	}
+
+	onMount(() => {
+		document.addEventListener('click', handleClickOutside);
+	});
+
+	onDestroy(() => {
+		document.removeEventListener('click', handleClickOutside);
+	});
 
 	async function buildTimeline() {
 		error = null;
@@ -181,12 +198,7 @@
 								<button class="btn-primary btn-small" onclick={() => tagPhoto(photo.id)}>
 									Save
 								</button>
-								<button
-									class="btn-secondary btn-small"
-									onclick={() => { editingPhotoId = null; yearInput = ''; monthInput = ''; }}
-								>
-									✕
-								</button>
+
 							</div>
 						{:else if photo.tagged_year}
 							<div class="tagged-row">
