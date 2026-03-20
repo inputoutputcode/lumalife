@@ -110,7 +110,7 @@ async def detect_faces(image_path: str, user_dir: str) -> list[dict]:
     loop = asyncio.get_event_loop()
     return await asyncio.wait_for(
         loop.run_in_executor(_executor, _detect_faces_sync, image_path, user_dir),
-        timeout=120.0,
+        timeout=600.0,
     )
 
 
