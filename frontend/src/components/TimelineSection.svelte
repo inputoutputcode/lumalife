@@ -59,11 +59,11 @@
 
 <section class="timeline-section" bind:this={sectionEl}>
 	<div class="timeline-marker">
+		<span class="timeline-year-label">{era.label}</span>
 		<div
 			class="timeline-dot"
 			style="width: {getDotSize(era.photos.length)}px; height: {getDotSize(era.photos.length)}px;"
 		></div>
-		<span class="timeline-year-label">{era.label}</span>
 	</div>
 
 	<div class="era-info">
@@ -103,13 +103,22 @@
 
 	.timeline-marker {
 		position: absolute;
-		left: -30px;
+		left: -31px;
 		top: 0;
 		transform: translateX(-50%);
 		display: flex;
-		flex-direction: column;
+		flex-direction: row;
 		align-items: center;
 		z-index: 2;
+	}
+
+	.timeline-year-label {
+		position: absolute;
+		right: calc(100% + 12px);
+		font-size: 0.75rem;
+		font-weight: 700;
+		color: var(--accent);
+		white-space: nowrap;
 	}
 
 	.timeline-dot {
@@ -118,14 +127,6 @@
 		border: 3px solid var(--bg-primary);
 		box-shadow: 0 0 0 2px var(--accent);
 		transition: transform 200ms ease;
-	}
-
-	.timeline-year-label {
-		font-size: 0.7rem;
-		font-weight: 700;
-		color: var(--accent);
-		margin-top: 4px;
-		white-space: nowrap;
 	}
 
 	.timeline-section:hover .timeline-dot {

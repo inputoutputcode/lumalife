@@ -285,12 +285,12 @@
 		position: relative;
 		max-width: 1200px;
 		margin: 0 auto;
-		padding-left: 60px;
+		padding-left: 120px;
 	}
 
 	.timeline-spine-line {
 		position: absolute;
-		left: 30px;
+		left: 90px;
 		top: -200px;
 		bottom: 0;
 		width: 2px;
