@@ -26,7 +26,7 @@ def _estimate_age_sync(crop_path: str) -> float | None:
         result = DeepFace.analyze(
             img_path=crop_path,
             actions=["age"],
-            detector_backend="skip",
+            detector_backend="skip",  # skip detection — already a face crop
             enforce_detection=False,
             silent=True,
         )
