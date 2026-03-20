@@ -201,8 +201,7 @@ async def detect(file: UploadFile = File(...)):
 
 @app.post("/analyze-crop")
 async def analyze_crop(file: UploadFile = File(...)):
-    """Analyze a pre-cropped face for age and gender.
-    Even for crops, MiVOLO runs its own detector — it needs to find the face."""
+    """Analyze a pre-cropped face for age and gender."""
     try:
         content = await file.read()
         img = Image.open(io.BytesIO(content)).convert("RGB")
@@ -212,7 +211,11 @@ async def analyze_crop(file: UploadFile = File(...)):
     try:
         predictor = _get_predictor()
         cv2_img = _pil_to_cv2(img)
-        detected_objects, _ = predictor.recognize(cv2_img)
+
+        try:
+            detected_objects, _ = predictor.recognize(cv2_img)
+        except Exception:
+            return {"age": None, "gender": None, "note": "Detection error"}
 
         face_inds = detected_objects.get_bboxes_inds("face")
         if face_inds:
@@ -222,7 +225,6 @@ async def analyze_crop(file: UploadFile = File(...)):
                 "gender": detected_objects.genders[ind],
             }
 
-        # No face found in crop — try person indices (MiVOLO can estimate from body)
         person_inds = detected_objects.get_bboxes_inds("person")
         if person_inds:
             ind = person_inds[0]
@@ -232,6 +234,88 @@ async def analyze_crop(file: UploadFile = File(...)):
             }
 
         return {"age": None, "gender": None, "note": "No face or person detected in crop"}
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
+
+
+from fastapi import Form
+
+@app.post("/analyze-with-bbox")
+async def analyze_with_bbox(
+    file: UploadFile = File(...),
+    x: int = Form(0), y: int = Form(0), w: int = Form(0), h: int = Form(0)
+):
+    """Analyze a full image with a known face bounding box.
+    
+    Uses a lower confidence threshold since we already know where the face is.
+    """
+    try:
+        content = await file.read()
+        img = Image.open(io.BytesIO(content)).convert("RGB")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+
+    try:
+        predictor = _get_predictor()
+        
+        # Temporarily lower threshold for bbox-guided detection
+        original_conf = predictor.detector.detector_kwargs["conf"]
+        predictor.detector.detector_kwargs["conf"] = 0.2
+        
+        cv2_img = _pil_to_cv2(img)
+
+        try:
+            detected_objects, _ = predictor.recognize(cv2_img)
+        except Exception:
+            return {"age": None, "gender": None, "note": "Detection error"}
+        finally:
+            predictor.detector.detector_kwargs["conf"] = original_conf
+
+        # Debug: uncomment to see what MiVOLO finds
+        # print(f"analyze-with-bbox: {detected_objects.n_faces} faces, {detected_objects.n_persons} persons")
+
+        # Find the MiVOLO detection closest to the provided bbox center
+        target_cx = x + w / 2
+        target_cy = y + h / 2
+        best_dist = float("inf")
+        best_age = None
+        best_gender = None
+
+        # Check faces first
+        for ind in detected_objects.get_bboxes_inds("face"):
+            bbox = detected_objects.yolo_results.boxes[ind].xyxy[0].cpu().numpy()
+            cx = (bbox[0] + bbox[2]) / 2
+            cy = (bbox[1] + bbox[3]) / 2
+            dist = ((cx - target_cx) ** 2 + (cy - target_cy) ** 2) ** 0.5
+            if dist < best_dist:
+                best_dist = dist
+                best_age = detected_objects.ages[ind]
+                best_gender = detected_objects.genders[ind]
+
+        # Also check persons (body-based estimation)
+        for ind in detected_objects.get_bboxes_inds("person"):
+            bbox = detected_objects.yolo_results.boxes[ind].xyxy[0].cpu().numpy()
+            cx = (bbox[0] + bbox[2]) / 2
+            cy = (bbox[1] + bbox[3]) / 2
+            dist = ((cx - target_cx) ** 2 + (cy - target_cy) ** 2) ** 0.5
+            if dist < best_dist:
+                best_dist = dist
+                best_age = detected_objects.ages[ind]
+                best_gender = detected_objects.genders[ind]
+
+        # Only accept if the match is reasonably close (within 2x the bbox diagonal)
+        max_dist = ((w ** 2 + h ** 2) ** 0.5) * 2
+        if best_age is not None and best_dist <= max_dist:
+            return {
+                "age": round(float(best_age), 1),
+                "gender": str(best_gender) if best_gender is not None else None,
+                "match_distance": round(float(best_dist), 1),
+            }
+
+        return {"age": None, "gender": None, "note": "No matching face/person found near bbox"}
 
     except Exception as e:
         import traceback

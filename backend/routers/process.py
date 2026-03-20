@@ -112,10 +112,15 @@ async def process_stream(request: Request, user: str | None = None):
                                 )
 
                             # Estimate age for each face via MiVOLO (GPU)
+                            image_full_path = os.path.join(user_dir, "uploads", stored_filename)
                             for face in faces:
                                 try:
                                     crop_full = os.path.join(user_dir, face["crop_path"])
-                                    age = await estimate_age(crop_full)
+                                    age = await estimate_age(
+                                        crop_full,
+                                        image_path=image_full_path,
+                                        bbox=face.get("bbox"),
+                                    )
                                     if age is not None:
                                         await conn.execute(
                                             """INSERT INTO age_estimates (photo_id, face_id, estimated_age, method)

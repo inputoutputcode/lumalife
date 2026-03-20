@@ -40,8 +40,8 @@ def _estimate_age_deepface(crop_path: str) -> float | None:
     return None
 
 
-async def _estimate_age_mivolo(crop_path: str) -> dict | None:
-    """Estimate age and gender using MiVOLO service."""
+async def _estimate_age_mivolo_crop(crop_path: str) -> dict | None:
+    """Estimate age from a face crop via MiVOLO."""
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             with open(crop_path, "rb") as f:
@@ -54,20 +54,52 @@ async def _estimate_age_mivolo(crop_path: str) -> dict | None:
                 if data.get("age") is not None:
                     return {"age": float(data["age"]), "gender": data.get("gender")}
     except Exception as e:
-        print(f"MiVOLO unavailable, falling back to DeepFace: {e}")
+        print(f"MiVOLO crop estimation failed: {e}")
     return None
 
 
-async def estimate_age(crop_path: str, user_dir: str = "/data") -> float | None:
-    """Estimate age — tries MiVOLO first, falls back to DeepFace."""
-    full_path = os.path.join(user_dir, crop_path) if not crop_path.startswith("/") else crop_path
+async def _estimate_age_mivolo_full(image_path: str, bbox: dict) -> dict | None:
+    """Estimate age from the FULL image + known face bbox (better accuracy with body context)."""
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            with open(image_path, "rb") as f:
+                resp = await client.post(
+                    f"{MIVOLO_URL}/analyze-with-bbox",
+                    files={"file": ("photo.jpg", f, "image/jpeg")},
+                    data={
+                        "x": str(bbox.get("x", 0)),
+                        "y": str(bbox.get("y", 0)),
+                        "w": str(bbox.get("w", 0)),
+                        "h": str(bbox.get("h", 0)),
+                    },
+                )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("age") is not None:
+                    return {"age": float(data["age"]), "gender": data.get("gender")}
+    except Exception as e:
+        print(f"MiVOLO full-image estimation failed: {e}")
+    return None
 
-    # Try MiVOLO first
-    result = await _estimate_age_mivolo(full_path)
+
+async def estimate_age(crop_path: str, user_dir: str = "/data",
+                       image_path: str | None = None, bbox: dict | None = None) -> float | None:
+    """Estimate age — tries MiVOLO with full image + bbox first (best accuracy),
+    falls back to crop-only, then DeepFace."""
+    
+    # Best: full image with bbox (face + body context)
+    if image_path and bbox:
+        result = await _estimate_age_mivolo_full(image_path, bbox)
+        if result is not None:
+            return result["age"]
+
+    # Good: crop only via MiVOLO
+    full_path = os.path.join(user_dir, crop_path) if not crop_path.startswith("/") else crop_path
+    result = await _estimate_age_mivolo_crop(full_path)
     if result is not None:
         return result["age"]
 
-    # Fallback to DeepFace
+    # Fallback: DeepFace on CPU
     loop = asyncio.get_event_loop()
     return await asyncio.wait_for(
         loop.run_in_executor(_executor, _estimate_age_deepface, full_path),
