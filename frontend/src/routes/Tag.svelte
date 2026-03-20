@@ -288,7 +288,21 @@
 								<button class="btn-edit" onclick={() => startEditing(photo.id, photo.tagged_year, photo.tagged_month)}>Edit</button>
 							</div>
 						{:else}
-							<button class="btn-secondary btn-small full-width" onclick={() => startEditing(photo.id, null, null)}>Tag</button>
+							<div class="tag-actions">
+								<button class="btn-secondary btn-small" onclick={() => startEditing(photo.id, null, null)}>Tag</button>
+								{#if photo.exif_date}
+									<button
+										class="btn-exif btn-small"
+										title="Use EXIF date: {photo.exif_date.slice(0, 10)}"
+										onclick={() => {
+											const dt = new Date(photo.exif_date);
+											startEditing(photo.id, dt.getFullYear(), dt.getMonth() + 1);
+										}}
+									>
+										📅 {photo.exif_date.slice(0, 4)}
+									</button>
+								{/if}
+							</div>
 						{/if}
 					</div>
 				</div>
@@ -384,6 +398,10 @@
 	.year-input, .month-input { -moz-appearance: textfield; }
 	.btn-small { padding: 4px 10px; font-size: 0.8rem; }
 	.full-width { width: 100%; }
+	.tag-actions { display: flex; gap: 6px; }
+	.tag-actions .btn-secondary { flex: 1; }
+	.btn-exif { background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; cursor: pointer; border-radius: var(--radius); }
+	.btn-exif:hover { border-color: var(--accent); color: var(--accent); }
 	.empty-state { text-align: center; padding: 60px 0; color: var(--text-secondary); }
 	.link-btn { background: none; color: var(--accent); font-weight: 600; font-size: inherit; text-decoration: underline; padding: 0; cursor: pointer; }
 

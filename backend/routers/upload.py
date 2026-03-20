@@ -102,25 +102,6 @@ async def upload_photos(request: Request, files: list[UploadFile] = File(...)):
                     exif_data.get("date"), exif_data.get("orientation", 1),
                 )
 
-                # Auto-tag with EXIF date if available
-                exif_date_str = exif_data.get("date")
-                auto_tagged_year = None
-                auto_tagged_month = None
-                if exif_date_str:
-                    try:
-                        from datetime import datetime
-                        dt = datetime.fromisoformat(exif_date_str)
-                        auto_tagged_year = dt.year
-                        auto_tagged_month = dt.month
-                        await conn.execute(
-                            """INSERT INTO tags (photo_id, year, month)
-                               VALUES ($1, $2, $3)
-                               ON CONFLICT (photo_id) DO NOTHING""",
-                            photo_id, dt.year, dt.month,
-                        )
-                    except Exception:
-                        pass
-
                 results.append({
                     "id": photo_id,
                     "filename": stored_filename,
@@ -133,8 +114,6 @@ async def upload_photos(request: Request, files: list[UploadFile] = File(...)):
                     "orientation": exif_data.get("orientation", 1),
                     "orientation_label": exif_data.get("orientation_label", "Normal"),
                     "had_exif": exif_data.get("had_exif", False),
-                    "auto_tagged_year": auto_tagged_year,
-                    "auto_tagged_month": auto_tagged_month,
                 })
 
             except HTTPException:
