@@ -91,13 +91,7 @@ def build_age_year_mapping(
                 pass
 
     if not anchors:
-        # No anchors — use age estimates relative to current year
-        from datetime import datetime
-        current_year = datetime.now().year
-        for ae in age_estimates:
-            if ae["photo_id"] not in result:
-                birth_year_est = current_year - ae["estimated_age"]
-                result[ae["photo_id"]] = round(birth_year_est + ae["estimated_age"])
+        # No anchors — can't reliably estimate years, leave untagged photos undated
         return result
 
     # Sort anchors by age
