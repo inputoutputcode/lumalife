@@ -113,7 +113,7 @@ async def build_timeline(user_id: int, username: str = "default") -> dict:
                            estimated_year = $2, era_label = $3,
                            era_start = $4, era_end = $5, sort_order = $6""",
                     photo["photo_id"],
-                    photo.get("estimated_year", 0),
+                    photo.get("estimated_year") or 0,
                     era["label"],
                     era["era_start"],
                     era["era_end"],
