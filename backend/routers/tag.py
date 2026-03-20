@@ -66,12 +66,20 @@ async def get_target_photos(request: Request):
             ORDER BY t.year ASC NULLS LAST, p.uploaded_at ASC
         """, user_id)
 
+        # Compute birth year from anchor points (tagged photos with age estimates)
+        birth_year = None
+        birth_estimates = []
+        for row in rows:
+            if row["tagged_year"] and row["estimated_age"] is not None:
+                birth_estimates.append(row["tagged_year"] - row["estimated_age"])
+        if birth_estimates:
+            birth_year = round(sum(birth_estimates) / len(birth_estimates))
+
         photos = []
         for row in rows:
             estimated_year = None
-            if row["estimated_age"] is not None:
-                # Show estimated year range based on age estimate (±4 years)
-                estimated_year = row["estimated_age"]
+            if row["estimated_age"] is not None and birth_year is not None:
+                estimated_year = birth_year + round(row["estimated_age"])
 
             photos.append({
                 "id": row["id"],
@@ -83,6 +91,7 @@ async def get_target_photos(request: Request):
                 "tagged_year": row["tagged_year"],
                 "tagged_month": row["tagged_month"],
                 "estimated_age": float(row["estimated_age"]) if row["estimated_age"] is not None else None,
+                "estimated_year": estimated_year,
                 "url": f"/data/{username}/uploads/{row['stored_filename']}",
             })
 

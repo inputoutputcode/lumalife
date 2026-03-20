@@ -287,8 +287,8 @@
 								<span class="year-badge">{photo.tagged_month ? `${photo.tagged_month}/${photo.tagged_year}` : photo.tagged_year}</span>
 								<button class="btn-edit" onclick={() => startEditing(photo.id, photo.tagged_year, photo.tagged_month)}>Edit</button>
 							</div>
-							{#if photo.estimated_age}
-								<p class="estimated-hint">AI thinks ~{Math.round(photo.estimated_age)} yrs old</p>
+							{#if photo.estimated_year}
+								<p class="estimated-hint">AI estimate: ~{photo.estimated_year}</p>
 							{/if}
 						{:else}
 							<div class="tag-actions">
@@ -305,10 +305,16 @@
 										📅 {photo.exif_date.slice(0, 4)}
 									</button>
 								{/if}
+								{#if photo.estimated_year}
+									<button
+										class="btn-exif btn-small"
+										title="AI estimated year"
+										onclick={() => startEditing(photo.id, photo.estimated_year, null)}
+									>
+										🤖 ~{photo.estimated_year}
+									</button>
+								{/if}
 							</div>
-							{#if photo.estimated_age}
-								<p class="estimated-hint">AI thinks ~{Math.round(photo.estimated_age)} yrs old</p>
-							{/if}
 						{/if}
 					</div>
 				</div>
