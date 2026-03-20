@@ -1,15 +1,18 @@
 import os
 import uuid
 import asyncio
+import base64
 from concurrent.futures import ThreadPoolExecutor
 
+import httpx
 import numpy as np
 from PIL import Image
 
-# Thread pool for CPU-bound DeepFace operations
+MIVOLO_URL = os.environ.get("MIVOLO_URL", "http://mivolo:8010")
+
+# Thread pool for CPU-bound DeepFace embedding extraction
 _executor = ThreadPoolExecutor(max_workers=3)
 
-# DeepFace lazy import to avoid slow startup
 _deepface = None
 
 
@@ -21,14 +24,57 @@ def _get_deepface():
     return _deepface
 
 
-def _detect_faces_sync(image_path: str, user_dir: str) -> list[dict]:
-    """Detect faces in image and return face data. Runs in thread pool."""
+async def _detect_faces_mivolo(image_path: str, user_dir: str) -> list[dict]:
+    """Detect faces using MiVOLO (GPU-accelerated YOLOv8 + age/gender)."""
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        with open(image_path, "rb") as f:
+            resp = await client.post(
+                f"{MIVOLO_URL}/detect",
+                files={"file": ("photo.jpg", f, "image/jpeg")},
+            )
+        if resp.status_code != 200:
+            raise Exception(f"MiVOLO detect failed: {resp.status_code} {resp.text}")
+
+        data = resp.json()
+
+    faces = []
+    for face_data in data.get("faces", []):
+        bbox = face_data["bbox"]
+
+        # Skip tiny faces
+        if bbox["w"] < 40 or bbox["h"] < 40:
+            continue
+
+        # Decode crop from base64
+        face_id = str(uuid.uuid4())
+        crop_filename = f"{face_id}.jpg"
+        crop_path = os.path.join(user_dir, "processed", crop_filename)
+
+        crop_bytes = base64.b64decode(face_data["crop_b64"])
+        with open(crop_path, "wb") as f:
+            f.write(crop_bytes)
+
+        faces.append({
+            "face_id": face_id,
+            "crop_path": f"processed/{crop_filename}",
+            "bbox": bbox,
+            "confidence": face_data.get("confidence", 0),
+            "landmarks": None,  # YOLOv8 doesn't return landmarks
+            "estimated_age": face_data.get("age"),
+            "gender": face_data.get("gender"),
+        })
+
+    return faces
+
+
+def _detect_faces_deepface(image_path: str, user_dir: str) -> list[dict]:
+    """Fallback: detect faces using DeepFace/SSD (CPU)."""
     DeepFace = _get_deepface()
 
     try:
         results = DeepFace.extract_faces(
             img_path=image_path,
-            detector_backend="retinaface",
+            detector_backend="ssd",  # SSD is faster than RetinaFace on ARM CPU
             enforce_detection=False,
             align=True,
         )
@@ -36,22 +82,18 @@ def _detect_faces_sync(image_path: str, user_dir: str) -> list[dict]:
         return []
 
     faces = []
-    for i, result in enumerate(results):
+    for result in results:
         if result.get("confidence", 0) < 0.1:
             continue
 
-        # Skip tiny face crops (< 40px in either dimension)
-        facial_area_check = result.get("facial_area", {})
-        if facial_area_check.get("w", 0) < 40 or facial_area_check.get("h", 0) < 40:
+        facial_area = result.get("facial_area", {})
+        if facial_area.get("w", 0) < 40 or facial_area.get("h", 0) < 40:
             continue
 
-        facial_area = result.get("facial_area", {})
         face_array = result.get("face")
-
         if face_array is None:
             continue
 
-        # Save face crop
         face_id = str(uuid.uuid4())
         crop_filename = f"{face_id}.jpg"
         crop_path = os.path.join(user_dir, "processed", crop_filename)
@@ -63,14 +105,6 @@ def _detect_faces_sync(image_path: str, user_dir: str) -> list[dict]:
             face_pil = Image.fromarray(face_img)
         face_pil.save(crop_path, "JPEG", quality=90)
 
-        # Extract landmarks if available
-        landmarks = {}
-        for lm_key in ["left_eye", "right_eye", "nose", "mouth_left", "mouth_right"]:
-            if lm_key in facial_area:
-                val = facial_area[lm_key]
-                if isinstance(val, (list, tuple)) and len(val) == 2:
-                    landmarks[lm_key] = [float(val[0]), float(val[1])]
-
         faces.append({
             "face_id": face_id,
             "crop_path": f"processed/{crop_filename}",
@@ -81,10 +115,23 @@ def _detect_faces_sync(image_path: str, user_dir: str) -> list[dict]:
                 "h": facial_area.get("h", 0),
             },
             "confidence": result.get("confidence", 0),
-            "landmarks": landmarks if landmarks else None,
+            "landmarks": None,
         })
 
     return faces
+
+
+async def detect_faces(image_path: str, user_dir: str) -> list[dict]:
+    """Detect faces — MiVOLO (GPU) first, fallback to DeepFace/SSD (CPU)."""
+    try:
+        return await _detect_faces_mivolo(image_path, user_dir)
+    except Exception as e:
+        print(f"MiVOLO detection failed, falling back to DeepFace: {e}")
+        loop = asyncio.get_event_loop()
+        return await asyncio.wait_for(
+            loop.run_in_executor(_executor, _detect_faces_deepface, image_path, user_dir),
+            timeout=120.0,
+        )
 
 
 def _extract_embedding_sync(image_path: str) -> list[float] | None:
@@ -105,43 +152,27 @@ def _extract_embedding_sync(image_path: str) -> list[float] | None:
     return None
 
 
-async def detect_faces(image_path: str, user_dir: str) -> list[dict]:
-    """Async wrapper for face detection."""
-    loop = asyncio.get_event_loop()
-    return await asyncio.wait_for(
-        loop.run_in_executor(_executor, _detect_faces_sync, image_path, user_dir),
-        timeout=600.0,
-    )
-
-
 async def extract_embedding(crop_path: str) -> list[float] | None:
     """Async wrapper for embedding extraction."""
     loop = asyncio.get_event_loop()
     return await asyncio.wait_for(
         loop.run_in_executor(_executor, _extract_embedding_sync, crop_path),
-        timeout=30.0,
+        timeout=60.0,
     )
 
 
 def _count_confident_faces(faces: list[dict], min_confidence: float = 0.5) -> int:
-    """Count faces with real confidence (not fallback whole-image results)."""
     return sum(1 for f in faces if f.get("confidence", 0) >= min_confidence)
 
 
 def _rotate_and_save(image_path: str, degrees_cw: int) -> None:
-    """Rotate image on disk by degrees clockwise."""
     img = Image.open(image_path)
     rotated = img.rotate(-degrees_cw, expand=True)
     rotated.save(image_path, quality=95)
 
 
 async def process_single_photo(photo_id: str, stored_filename: str, user_dir: str) -> list[dict]:
-    """Detect faces and extract embeddings for a single photo.
-
-    If no confident faces found, tries rotating 90°, 180°, 270° and keeps
-    the rotation with the best face detection results (auto-rotation).
-    The image file on disk is updated to the best rotation.
-    """
+    """Detect faces and extract embeddings for a single photo."""
     import shutil
 
     image_path = os.path.join(user_dir, "uploads", stored_filename)
@@ -150,11 +181,10 @@ async def process_single_photo(photo_id: str, stored_filename: str, user_dir: st
 
     loop = asyncio.get_event_loop()
 
-    # Try original orientation first
+    # Try original orientation
     faces = await detect_faces(image_path, user_dir)
     best_confident = _count_confident_faces(faces)
 
-    # If we found confident faces at 0°, skip rotation attempts
     if best_confident > 0:
         for face in faces:
             crop_full_path = os.path.join(user_dir, face["crop_path"])
@@ -162,7 +192,7 @@ async def process_single_photo(photo_id: str, stored_filename: str, user_dir: st
             face["embedding"] = embedding
         return faces
 
-    # No confident faces — try 90° and 270° (most common rotation issues)
+    # No confident faces — try 90° and 270°
     best_faces = faces
     best_rotation = 0
     backup_path = image_path + ".bak"
@@ -180,9 +210,8 @@ async def process_single_photo(photo_id: str, stored_filename: str, user_dir: st
                 best_faces = trial_faces
                 best_rotation = rotation
                 best_confident = confident
-                break  # Found faces, no need to try more
+                break
 
-        # Apply the winning rotation (or restore original)
         shutil.copy2(backup_path, image_path)
         if best_rotation > 0:
             await loop.run_in_executor(_executor, _rotate_and_save, image_path, best_rotation)
@@ -190,7 +219,6 @@ async def process_single_photo(photo_id: str, stored_filename: str, user_dir: st
         if os.path.exists(backup_path):
             os.remove(backup_path)
 
-    # Extract embeddings
     for face in best_faces:
         crop_full_path = os.path.join(user_dir, face["crop_path"])
         embedding = await extract_embedding(crop_full_path)
