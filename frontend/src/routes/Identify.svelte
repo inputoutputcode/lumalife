@@ -62,7 +62,11 @@
 		eventSource.addEventListener('clustering_done', (e) => {
 			const data = JSON.parse(e.data);
 			const clusterCount = data.clusters?.length ?? 0;
-			processProgress = { ...processProgress, phase: 'done', message: `Found ${clusterCount} cluster${clusterCount !== 1 ? 's' : ''} from ${data.total_faces} faces` };
+			if (clusterCount > 0) {
+				processProgress = { ...processProgress, phase: 'done', message: `Found ${clusterCount} cluster${clusterCount !== 1 ? 's' : ''} from ${data.total_faces} faces` };
+			} else {
+				processProgress = { ...processProgress, phase: 'done', message: `No face clusters found (${data.total_faces} faces detected but none matched)` };
+			}
 		});
 
 		eventSource.addEventListener('info', (e) => {
