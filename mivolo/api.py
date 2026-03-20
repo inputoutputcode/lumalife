@@ -52,6 +52,10 @@ def _get_predictor():
     from mivolo.predictor import Predictor
     config = MiVOLOConfig()
     _predictor = Predictor(config, verbose=False)
+
+    # Raise confidence threshold from 0.4 to 0.7 to reduce false positives
+    _predictor.detector.detector_kwargs["conf"] = 0.7
+
     return _predictor
 
 
@@ -130,10 +134,10 @@ async def detect(file: UploadFile = File(...)):
         results = []
         face_inds = detected_objects.get_bboxes_inds("face")
         for ind in face_inds:
+            conf = float(detected_objects.yolo_results.boxes[ind].conf[0])
             bbox = detected_objects.yolo_results.boxes[ind].xyxy[0].cpu().numpy()
             age = detected_objects.ages[ind]
             gender = detected_objects.genders[ind]
-            conf = float(detected_objects.yolo_results.boxes[ind].conf[0])
 
             x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
             # Expand bbox by 20% for better face crops
