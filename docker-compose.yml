@@ -29,9 +29,35 @@ services:
       - DATA_DIR=/data
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://lumalife:lumalife@db:5432/lumalife
+      - MIVOLO_URL=http://mivolo:8010
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
+
+  mivolo:
+    build:
+      context: ./mivolo
+      dockerfile: Dockerfile
+    ports:
+      - "8010:8010"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
     restart: unless-stopped
 
   frontend:

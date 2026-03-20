@@ -1,11 +1,13 @@
 import os
 import asyncio
+import httpx
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
-# user_dir passed per-call now
 _executor = ThreadPoolExecutor(max_workers=2)
+
+MIVOLO_URL = os.environ.get("MIVOLO_URL", "http://mivolo:8010")
 
 _deepface = None
 
@@ -18,15 +20,14 @@ def _get_deepface():
     return _deepface
 
 
-def _estimate_age_sync(crop_path: str) -> float | None:
-    """Estimate age from a face crop image."""
+def _estimate_age_deepface(crop_path: str) -> float | None:
+    """Fallback: estimate age using DeepFace."""
     DeepFace = _get_deepface()
-
     try:
         result = DeepFace.analyze(
             img_path=crop_path,
             actions=["age"],
-            detector_backend="skip",  # skip detection — already a face crop
+            detector_backend="skip",
             enforce_detection=False,
             silent=True,
         )
@@ -39,14 +40,59 @@ def _estimate_age_sync(crop_path: str) -> float | None:
     return None
 
 
+async def _estimate_age_mivolo(crop_path: str) -> dict | None:
+    """Estimate age and gender using MiVOLO service."""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            with open(crop_path, "rb") as f:
+                resp = await client.post(
+                    f"{MIVOLO_URL}/analyze-crop",
+                    files={"file": ("face.jpg", f, "image/jpeg")},
+                )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("age") is not None:
+                    return {"age": float(data["age"]), "gender": data.get("gender")}
+    except Exception as e:
+        print(f"MiVOLO unavailable, falling back to DeepFace: {e}")
+    return None
+
+
 async def estimate_age(crop_path: str, user_dir: str = "/data") -> float | None:
-    """Async wrapper for age estimation."""
-    loop = asyncio.get_event_loop()
+    """Estimate age — tries MiVOLO first, falls back to DeepFace."""
     full_path = os.path.join(user_dir, crop_path) if not crop_path.startswith("/") else crop_path
+
+    # Try MiVOLO first
+    result = await _estimate_age_mivolo(full_path)
+    if result is not None:
+        return result["age"]
+
+    # Fallback to DeepFace
+    loop = asyncio.get_event_loop()
     return await asyncio.wait_for(
-        loop.run_in_executor(_executor, _estimate_age_sync, full_path),
+        loop.run_in_executor(_executor, _estimate_age_deepface, full_path),
         timeout=30.0,
     )
+
+
+async def estimate_age_full(crop_path: str, user_dir: str = "/data") -> dict | None:
+    """Estimate age + gender — tries MiVOLO first, falls back to DeepFace (age only)."""
+    full_path = os.path.join(user_dir, crop_path) if not crop_path.startswith("/") else crop_path
+
+    # Try MiVOLO first
+    result = await _estimate_age_mivolo(full_path)
+    if result is not None:
+        return result
+
+    # Fallback
+    loop = asyncio.get_event_loop()
+    age = await asyncio.wait_for(
+        loop.run_in_executor(_executor, _estimate_age_deepface, full_path),
+        timeout=30.0,
+    )
+    if age is not None:
+        return {"age": age, "gender": None}
+    return None
 
 
 def build_age_year_mapping(
@@ -91,7 +137,6 @@ def build_age_year_mapping(
                 pass
 
     if not anchors:
-        # No anchors — can't reliably estimate years, leave untagged photos undated
         return result
 
     # Sort anchors by age
@@ -107,11 +152,9 @@ def build_age_year_mapping(
             if photo_id in result:
                 continue
             est_age = ae["estimated_age"]
-            # Linear interpolation
             interpolated_year = np.interp(est_age, anchor_ages, anchor_years)
             result[photo_id] = round(float(interpolated_year))
     else:
-        # Single anchor point
         anchor_age, anchor_year = anchors[0]
         for ae in age_estimates:
             photo_id = ae["photo_id"]
@@ -131,12 +174,10 @@ def assign_era_buckets(
     if not photo_years:
         return []
 
-    # Count photos per year
     from collections import Counter
     year_counts = Counter(photo_years.values())
     all_years = sorted(year_counts.keys())
 
-    # Separate years that stand alone vs need merging
     eras = []
     merge_buffer = []
 
@@ -170,6 +211,5 @@ def assign_era_buckets(
 
     flush_merge_buffer()
 
-    # Sort by era_start
     eras.sort(key=lambda e: e["era_start"])
     return eras

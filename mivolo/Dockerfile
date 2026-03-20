@@ -1,4 +1,6 @@
-FROM python:3.10-slim
+FROM nvcr.io/nvidia/vllm:26.01-py3
+
+# vLLM image has PyTorch with sm_121 (GB10/Blackwell) support
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git wget libgl1 libglib2.0-0 \
@@ -6,32 +8,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install PyTorch (CPU for now — swap for CUDA if GPU available)
-RUN pip install --no-cache-dir \
-    torch==2.1.2 \
-    torchvision==0.16.2 \
-    --index-url https://download.pytorch.org/whl/cpu
-
 # Clone MiVOLO
 RUN git clone https://github.com/WildChlamydia/MiVOLO.git /app/mivolo
 
-# Install MiVOLO dependencies
-WORKDIR /app/mivolo
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir .
-
-# Install FastAPI for the API wrapper
-RUN pip install --no-cache-dir fastapi==0.115.6 uvicorn==0.34.0 python-multipart==0.0.20
+# Install MiVOLO deps (use PYTHONPATH instead of setup.py)
+RUN pip install --no-cache-dir setuptools && \
+    pip install --no-cache-dir \
+    huggingface_hub \
+    "ultralytics==8.1.0" \
+    "timm==0.8.13.dev0" \
+    "lapx>=0.5.2" \
+    gdown \
+    fastapi==0.115.6 \
+    uvicorn==0.34.0 \
+    python-multipart==0.0.20
 
 # Download model weights
+# YOLOv8 face+person detector from HuggingFace
+# MiVOLO cross_person (face+body, age+gender) from Google Drive
 RUN mkdir -p /app/models && \
-    wget -q "https://github.com/WildChlamydia/MiVOLO/releases/download/v1.0/yolov8x_person_face.pt" -O /app/models/yolov8x_person_face.pt && \
-    wget -q "https://github.com/WildChlamydia/MiVOLO/releases/download/v1.0/model_imdb_cross_person_4.22_99.46.pth.tar" -O /app/models/mivolo_imdb.pth.tar
-
-WORKDIR /app
+    python3 -c "from huggingface_hub import hf_hub_download; hf_hub_download('iitolstykh/YOLO-Face-Person-Detector', 'yolov8x_person_face.pt', local_dir='/app/models')" && \
+    gdown "11i8pKctxz3wVkDBlWKvhYIh7kpVFXSZ4" -O /app/models/mivolo_imdb.pth.tar
 
 # Copy API wrapper
 COPY api.py /app/api.py
+
+# Add mivolo to Python path
+ENV PYTHONPATH="/app/mivolo:${PYTHONPATH}"
 
 EXPOSE 8010
 
