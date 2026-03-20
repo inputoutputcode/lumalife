@@ -120,7 +120,12 @@ async def detect(file: UploadFile = File(...)):
     try:
         predictor = _get_predictor()
         cv2_img = _pil_to_cv2(img)
-        detected_objects, _ = predictor.recognize(cv2_img)
+        try:
+            detected_objects, _ = predictor.recognize(cv2_img)
+        except Exception as e:
+            # Some images cause numeric errors in YOLOv8 — return empty
+            print(f"Detection error (returning empty): {e}")
+            return {"faces": [], "count": 0}
 
         results = []
         face_inds = detected_objects.get_bboxes_inds("face")

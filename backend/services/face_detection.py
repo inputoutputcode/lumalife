@@ -122,16 +122,13 @@ def _detect_faces_deepface(image_path: str, user_dir: str) -> list[dict]:
 
 
 async def detect_faces(image_path: str, user_dir: str) -> list[dict]:
-    """Detect faces — MiVOLO (GPU) first, fallback to DeepFace/SSD (CPU)."""
+    """Detect faces — MiVOLO (GPU) first, return empty on failure (no slow CPU fallback)."""
     try:
         return await _detect_faces_mivolo(image_path, user_dir)
     except Exception as e:
-        print(f"MiVOLO detection failed, falling back to DeepFace: {e}")
-        loop = asyncio.get_event_loop()
-        return await asyncio.wait_for(
-            loop.run_in_executor(_executor, _detect_faces_deepface, image_path, user_dir),
-            timeout=120.0,
-        )
+        print(f"MiVOLO detection failed for {os.path.basename(image_path)}: {e}")
+        # Return empty instead of falling back to slow CPU detection
+        return []
 
 
 def _extract_embedding_sync(image_path: str) -> list[float] | None:
