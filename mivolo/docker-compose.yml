@@ -1,0 +1,29 @@
+# Standalone MiVOLO container — NOT connected to main app yet.
+# Run separately: docker compose -f mivolo/docker-compose.yml up --build
+#
+# Test with:
+#   curl -X POST -F "file=@photo.jpg" http://localhost:8010/analyze
+#   curl -X POST -F "file=@face_crop.jpg" http://localhost:8010/analyze-crop
+#   curl http://localhost:8010/health
+
+services:
+  mivolo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8010:8010"
+    # Uncomment for GPU support:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    volumes:
+      - mivolo-models:/app/models
+    restart: unless-stopped
+
+volumes:
+  mivolo-models:
