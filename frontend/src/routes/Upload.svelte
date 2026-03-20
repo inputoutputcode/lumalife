@@ -129,7 +129,7 @@
 <div class="upload-page">
 	<div class="upload-hero">
 		<h2>Your Life, Illuminated</h2>
-		<p class="subtitle">Upload your photos and we'll build a timeline of your journey through time.</p>
+		<p class="subtitle">Upload photos of yourself throughout the years and we'll build a visual timeline of your life.</p>
 	</div>
 
 	<div
