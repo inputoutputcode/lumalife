@@ -48,8 +48,11 @@ async def build_timeline(user_id: int, username: str = "default") -> dict:
             for r in age_rows
         ]
 
+        # Get birth year from user profile
+        birth_year = await conn.fetchval("SELECT birth_year FROM users WHERE id = $1", user_id)
+
         # Build year mapping
-        photo_years = build_age_year_mapping(tagged_photos, age_estimates)
+        photo_years = build_age_year_mapping(tagged_photos, age_estimates, birth_year=birth_year)
 
         # Assign era buckets
         eras = assign_era_buckets(photo_years)

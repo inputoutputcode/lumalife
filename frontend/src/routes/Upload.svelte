@@ -13,6 +13,28 @@
 	let pendingFiles = $state([]);
 	let uploadProgress = $state(0);
 	let uploadTotal = $state(0);
+	let birthYear = $state(null);
+	let birthYearInput = $state('');
+	let birthYearLoaded = $state(false);
+
+	async function loadProfile() {
+		try {
+			const data = await api.getProfile();
+			birthYear = data.birth_year;
+			if (birthYear) birthYearInput = String(birthYear);
+			birthYearLoaded = true;
+		} catch {
+			birthYearLoaded = true;
+		}
+	}
+
+	async function saveBirthYear() {
+		const yr = parseInt(birthYearInput);
+		if (yr >= 1900 && yr <= 2025) {
+			await api.updateProfile(yr);
+			birthYear = yr;
+		}
+	}
 
 	async function loadPhotos() {
 		try {
@@ -25,6 +47,7 @@
 	}
 
 	$effect(() => {
+		loadProfile();
 		loadPhotos();
 	});
 
@@ -131,6 +154,24 @@
 		<h2>Your Life, Illuminated</h2>
 		<p class="subtitle">Upload photos of yourself throughout the years and we'll build a visual timeline of your life.</p>
 	</div>
+
+	{#if birthYearLoaded && !birthYear}
+		<div class="birth-year-prompt">
+			<p>When were you born? This helps us estimate when your photos were taken.</p>
+			<div class="birth-year-row">
+				<input
+					type="number"
+					min="1900"
+					max="2025"
+					placeholder="Birth year"
+					bind:value={birthYearInput}
+					onkeydown={(e) => e.key === 'Enter' && saveBirthYear()}
+					class="birth-year-input"
+				/>
+				<button class="btn-primary" onclick={saveBirthYear}>Continue</button>
+			</div>
+		</div>
+	{/if}
 
 	<div
 		class="drop-zone"
@@ -252,6 +293,36 @@
 		font-size: 2.5rem;
 		color: var(--accent);
 		margin-bottom: 12px;
+	}
+
+	.birth-year-prompt {
+		background: var(--accent-glow, #eef4ff);
+		border: 1px solid var(--accent-dim, #b3d1ff);
+		border-radius: var(--radius-lg, 12px);
+		padding: 24px;
+		text-align: center;
+		margin-bottom: 24px;
+	}
+
+	.birth-year-prompt p {
+		margin-bottom: 16px;
+		color: var(--text-secondary);
+	}
+
+	.birth-year-row {
+		display: flex;
+		gap: 12px;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.birth-year-input {
+		width: 120px;
+		padding: 8px 12px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		font-size: 1.1rem;
+		text-align: center;
 	}
 
 	.subtitle {

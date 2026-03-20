@@ -98,6 +98,7 @@ async def estimate_age_full(crop_path: str, user_dir: str = "/data") -> dict | N
 def build_age_year_mapping(
     tagged_photos: list[dict],
     age_estimates: list[dict],
+    birth_year: int | None = None,
 ) -> dict[str, int]:
     """
     Build photo_id -> estimated_year mapping using:
@@ -135,6 +136,16 @@ def build_age_year_mapping(
                     continue
             except (ValueError, TypeError):
                 pass
+
+    # If birth year is known, use it directly for all untagged photos
+    if birth_year is not None:
+        for ae in age_estimates:
+            photo_id = ae["photo_id"]
+            if photo_id in result:
+                continue
+            if ae["estimated_age"] is not None:
+                result[photo_id] = birth_year + round(ae["estimated_age"])
+        return result
 
     if not anchors:
         return result

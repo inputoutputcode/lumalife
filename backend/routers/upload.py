@@ -2,6 +2,7 @@ import os
 import uuid
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from models.schema import get_pool, get_user_dir
 from utils.validation import validate_mime_type, validate_file_size, MAX_FILES, MAX_FILE_SIZE
@@ -208,6 +209,30 @@ async def delete_photo(photo_id: str, request: Request):
         await conn.execute("DELETE FROM photos WHERE id = $1", photo_id)
 
         return {"status": "deleted", "photo_id": photo_id}
+
+
+@router.get("/profile")
+async def get_profile(request: Request):
+    """Get user profile (birth year, etc.)."""
+    user_id = request.state.user_id
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT birth_year FROM users WHERE id = $1", user_id)
+        return {"birth_year": row["birth_year"] if row else None}
+
+
+class ProfileUpdate(BaseModel):
+    birth_year: int = Field(..., ge=1900, le=2025)
+
+
+@router.put("/profile")
+async def update_profile(request: Request, body: ProfileUpdate):
+    """Set user birth year."""
+    user_id = request.state.user_id
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE users SET birth_year = $1 WHERE id = $2", body.birth_year, user_id)
+        return {"status": "updated", "birth_year": body.birth_year}
 
 
 @router.get("/list")

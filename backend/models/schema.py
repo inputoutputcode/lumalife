@@ -47,6 +47,7 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 username TEXT UNIQUE NOT NULL,
+                birth_year INTEGER,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)

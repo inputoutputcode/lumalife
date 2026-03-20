@@ -77,6 +77,14 @@ export const api = {
 		return request('GET', '/photos/clusters');
 	},
 
+	getProfile() {
+		return request('GET', '/photos/profile');
+	},
+
+	updateProfile(birthYear) {
+		return request('PUT', '/photos/profile', { birth_year: birthYear });
+	},
+
 	confirmCluster(clusterId) {
 		return request('POST', `/photos/clusters/${clusterId}/confirm`);
 	},

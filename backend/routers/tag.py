@@ -66,14 +66,15 @@ async def get_target_photos(request: Request):
             ORDER BY t.year ASC NULLS LAST, p.uploaded_at ASC
         """, user_id)
 
-        # Compute birth year from anchor points (tagged photos with age estimates)
-        birth_year = None
-        birth_estimates = []
-        for row in rows:
-            if row["tagged_year"] and row["estimated_age"] is not None:
-                birth_estimates.append(row["tagged_year"] - row["estimated_age"])
-        if birth_estimates:
-            birth_year = round(sum(birth_estimates) / len(birth_estimates))
+        # Get birth year from user profile, fallback to computing from anchors
+        birth_year = await conn.fetchval("SELECT birth_year FROM users WHERE id = $1", user_id)
+        if birth_year is None:
+            birth_estimates = []
+            for row in rows:
+                if row["tagged_year"] and row["estimated_age"] is not None:
+                    birth_estimates.append(row["tagged_year"] - row["estimated_age"])
+            if birth_estimates:
+                birth_year = round(sum(birth_estimates) / len(birth_estimates))
 
         photos = []
         for row in rows:
