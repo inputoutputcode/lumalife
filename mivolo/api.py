@@ -53,8 +53,8 @@ def _get_predictor():
     config = MiVOLOConfig()
     _predictor = Predictor(config, verbose=False)
 
-    # Raise confidence threshold from 0.4 to 0.7 to reduce false positives
-    _predictor.detector.detector_kwargs["conf"] = 0.7
+    # Set confidence threshold — 0.45 catches real faces, filtering by size handles noise
+    _predictor.detector.detector_kwargs["conf"] = 0.45
 
     return _predictor
 
@@ -136,10 +136,28 @@ async def detect(file: UploadFile = File(...)):
         for ind in face_inds:
             conf = float(detected_objects.yolo_results.boxes[ind].conf[0])
             bbox = detected_objects.yolo_results.boxes[ind].xyxy[0].cpu().numpy()
+
+            x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+            w, h = x2 - x1, y2 - y1
+
+            # Filter: minimum face size (60px in both dimensions)
+            if w < 60 or h < 60:
+                continue
+
+            # Filter: aspect ratio sanity (faces are roughly square, allow 1:3 ratio)
+            aspect = max(w, h) / max(min(w, h), 1)
+            if aspect > 3.0:
+                continue
+
+            # Filter: face area must be at least 0.1% of image area
+            img_w, img_h = img.size
+            face_area_pct = (w * h) / (img_w * img_h) * 100
+            if face_area_pct < 0.1:
+                continue
+
             age = detected_objects.ages[ind]
             gender = detected_objects.genders[ind]
 
-            x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
             # Expand bbox by 20% for better face crops
             w, h = x2 - x1, y2 - y1
             pad_x, pad_y = int(w * 0.2), int(h * 0.2)
@@ -164,6 +182,14 @@ async def detect(file: UploadFile = File(...)):
                 "gender": gender,
                 "crop_b64": crop_b64,
             })
+
+        # Sort by confidence, keep top 10 max
+        results.sort(key=lambda f: f["confidence"], reverse=True)
+        results = results[:10]
+
+        # Noise detection: if 5+ faces found and best conf < 0.8, likely scan artifacts
+        if len(results) >= 5 and results[0]["confidence"] < 0.8:
+            results = []
 
         return {"faces": results, "count": len(results)}
 
