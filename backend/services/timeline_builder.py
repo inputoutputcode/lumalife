@@ -79,6 +79,24 @@ async def build_timeline(user_id: int, username: str = "default") -> dict:
                 "photos": era_photos,
             })
 
+        # Add "Undated" section for photos without a year
+        dated_ids = set(photo_years.keys())
+        undated_photos = []
+        for pid, pdata in photo_map.items():
+            if pid not in dated_ids:
+                photo_data = pdata.copy()
+                photo_data["estimated_year"] = None
+                photo_data["tagged_year"] = None
+                undated_photos.append(photo_data)
+
+        if undated_photos:
+            era_response.append({
+                "label": "Undated",
+                "era_start": 9999,
+                "era_end": 9999,
+                "photos": undated_photos,
+            })
+
         # Clear and rebuild timeline_entries for this user
         await conn.execute(
             "DELETE FROM timeline_entries WHERE photo_id IN (SELECT id FROM photos WHERE user_id = $1)",
@@ -103,7 +121,10 @@ async def build_timeline(user_id: int, username: str = "default") -> dict:
                 )
                 sort_order += 1
 
+        total = sum(len(e["photos"]) for e in era_response)
+        undated_count = len(undated_photos) if undated_photos else 0
         return {
             "eras": era_response,
-            "total_photos": sum(len(e["photos"]) for e in era_response),
+            "total_photos": total,
+            "undated_count": undated_count,
         }

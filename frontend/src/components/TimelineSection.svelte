@@ -67,7 +67,7 @@
 	</div>
 
 	<div class="era-info">
-		<span class="era-count">{era.photos.length} photo{era.photos.length !== 1 ? 's' : ''}</span>
+		<span class="era-count">{era.photos.length} photo{era.photos.length !== 1 ? 's' : ''}{era.label === 'Undated' ? ' · not yet dated' : ''}</span>
 	</div>
 
 	<div class="photos-layout">

@@ -17,6 +17,7 @@
 	let bulkYear = $state('');
 	let bulkMonth = $state('');
 	let bulkMode = $state(false);
+	let showBuildDialog = $state(false);
 
 	async function loadTargetPhotos() {
 		loading = true;
@@ -149,7 +150,22 @@
 		};
 	});
 
+	function getUntaggedCount() {
+		if (!targetData) return 0;
+		return targetData.photos.filter(p => !p.tagged_year).length;
+	}
+
+	function requestBuildTimeline() {
+		const untagged = getUntaggedCount();
+		if (untagged > 0) {
+			showBuildDialog = true;
+		} else {
+			buildTimeline();
+		}
+	}
+
 	async function buildTimeline() {
+		showBuildDialog = false;
 		error = null;
 		estimatingAges = true;
 		try {
@@ -227,7 +243,7 @@
 			<div class="build-section">
 				<button
 					class="btn-primary build-btn"
-					onclick={buildTimeline}
+					onclick={requestBuildTimeline}
 					disabled={estimatingAges || buildingTimeline}
 				>
 					{#if estimatingAges}
@@ -280,6 +296,22 @@
 		</div>
 	{/if}
 </div>
+
+{#if showBuildDialog}
+	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+	<div class="dialog-overlay" onclick={() => showBuildDialog = false}>
+		<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+		<div class="dialog-card" onclick={(e) => e.stopPropagation()}>
+			<h3>Build Timeline</h3>
+			<p><strong>{getUntaggedCount()}</strong> of {targetData.total} photos don't have a year assigned.</p>
+			<p class="dialog-hint">These photos will appear in an "Undated" section at the end of your timeline. You can tag them later.</p>
+			<div class="dialog-actions">
+				<button class="btn-secondary" onclick={() => showBuildDialog = false}>Go back and tag more</button>
+				<button class="btn-primary" onclick={buildTimeline}>Build anyway</button>
+			</div>
+		</div>
+	</div>
+{/if}
 
 {#if lightboxPhoto}
 	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
@@ -354,6 +386,14 @@
 	.full-width { width: 100%; }
 	.empty-state { text-align: center; padding: 60px 0; color: var(--text-secondary); }
 	.link-btn { background: none; color: var(--accent); font-weight: 600; font-size: inherit; text-decoration: underline; padding: 0; cursor: pointer; }
+
+	/* Dialog */
+	.dialog-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 900; display: flex; align-items: center; justify-content: center; padding: 20px; }
+	.dialog-card { background: var(--bg-card); border-radius: var(--radius-lg); padding: 32px; max-width: 480px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+	.dialog-card h3 { font-size: 1.3rem; margin-bottom: 12px; color: var(--text-primary); }
+	.dialog-card p { color: var(--text-secondary); margin-bottom: 8px; line-height: 1.5; }
+	.dialog-hint { font-size: 0.85rem; color: var(--text-muted); }
+	.dialog-actions { display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end; }
 
 	/* Lightbox */
 	.lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 40px; }
