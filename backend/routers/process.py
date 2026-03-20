@@ -111,26 +111,20 @@ async def process_stream(request: Request, user: str | None = None):
                                     landmarks_json,
                                 )
 
-                            # Estimate age for each face via MiVOLO (GPU)
-                            image_full_path = os.path.join(user_dir, "uploads", stored_filename)
+                            # Store age estimates from InsightFace (already computed during detection)
                             for face in faces:
-                                try:
-                                    crop_full = os.path.join(user_dir, face["crop_path"])
-                                    age = await estimate_age(
-                                        crop_full,
-                                        image_path=image_full_path,
-                                        bbox=face.get("bbox"),
-                                    )
-                                    if age is not None:
+                                age = face.get("estimated_age")
+                                if age is not None:
+                                    try:
                                         await conn.execute(
                                             """INSERT INTO age_estimates (photo_id, face_id, estimated_age, method)
-                                               VALUES ($1, $2, $3, 'mivolo')
+                                               VALUES ($1, $2, $3, 'insightface')
                                                ON CONFLICT (photo_id) DO UPDATE SET
-                                                   estimated_age = $3, method = 'mivolo'""",
-                                            photo_id, face["face_id"], age,
+                                                   estimated_age = $3, method = 'insightface'""",
+                                            photo_id, face["face_id"], float(age),
                                         )
-                                except Exception as e:
-                                    print(f"Age estimation failed for face {face['face_id']}: {e}")
+                                    except Exception as e:
+                                        print(f"Age estimate store failed: {e}")
 
                             await conn.execute(
                                 "UPDATE photos SET processed = TRUE WHERE id = $1",

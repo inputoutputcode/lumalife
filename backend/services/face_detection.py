@@ -1,160 +1,120 @@
 import os
 import uuid
 import asyncio
-import base64
 from concurrent.futures import ThreadPoolExecutor
 
-import httpx
 import numpy as np
 from PIL import Image
 
-MIVOLO_URL = os.environ.get("MIVOLO_URL", "http://mivolo:8010")
+_executor = ThreadPoolExecutor(max_workers=2)
 
-# Thread pool for CPU-bound DeepFace embedding extraction
-_executor = ThreadPoolExecutor(max_workers=3)
-
-_deepface = None
+# InsightFace model (lazy loaded)
+_insightface_app = None
 
 
-def _get_deepface():
-    global _deepface
-    if _deepface is None:
-        from deepface import DeepFace
-        _deepface = DeepFace
-    return _deepface
+def _get_insightface():
+    global _insightface_app
+    if _insightface_app is not None:
+        return _insightface_app
+
+    import insightface
+    _insightface_app = insightface.app.FaceAnalysis(
+        name="buffalo_l",
+        providers=["CPUExecutionProvider"],
+    )
+    # det_size controls detection input size — larger = better for small faces
+    _insightface_app.prepare(ctx_id=0, det_size=(640, 640))
+    print("InsightFace buffalo_l model loaded")
+    return _insightface_app
 
 
-async def _detect_faces_mivolo(image_path: str, user_dir: str) -> list[dict]:
-    """Detect faces using MiVOLO (GPU-accelerated YOLOv8 + age/gender)."""
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        with open(image_path, "rb") as f:
-            resp = await client.post(
-                f"{MIVOLO_URL}/detect",
-                files={"file": ("photo.jpg", f, "image/jpeg")},
-            )
-        if resp.status_code != 200:
-            raise Exception(f"MiVOLO detect failed: {resp.status_code} {resp.text}")
+def _detect_faces_insightface(image_path: str, user_dir: str) -> list[dict]:
+    """Detect faces using InsightFace (SCRFD + ArcFace + age/gender in one pass)."""
+    import cv2
 
-        data = resp.json()
-
-    faces = []
-    for face_data in data.get("faces", []):
-        bbox = face_data["bbox"]
-
-        # Skip tiny faces
-        if bbox["w"] < 40 or bbox["h"] < 40:
-            continue
-
-        # Decode crop from base64
-        face_id = str(uuid.uuid4())
-        crop_filename = f"{face_id}.jpg"
-        crop_path = os.path.join(user_dir, "processed", crop_filename)
-
-        crop_bytes = base64.b64decode(face_data["crop_b64"])
-        with open(crop_path, "wb") as f:
-            f.write(crop_bytes)
-
-        faces.append({
-            "face_id": face_id,
-            "crop_path": f"processed/{crop_filename}",
-            "bbox": bbox,
-            "confidence": face_data.get("confidence", 0),
-            "landmarks": None,  # YOLOv8 doesn't return landmarks
-            "estimated_age": face_data.get("age"),
-            "gender": face_data.get("gender"),
-        })
-
-    return faces
-
-
-def _detect_faces_deepface(image_path: str, user_dir: str) -> list[dict]:
-    """Fallback: detect faces using DeepFace/SSD (CPU)."""
-    DeepFace = _get_deepface()
-
-    try:
-        results = DeepFace.extract_faces(
-            img_path=image_path,
-            detector_backend="ssd",  # SSD is faster than RetinaFace on ARM CPU
-            enforce_detection=False,
-            align=True,
-        )
-    except Exception:
+    img = cv2.imread(image_path)
+    if img is None:
         return []
 
+    app = _get_insightface()
+    faces_result = app.get(img)
+
     faces = []
-    for result in results:
-        if result.get("confidence", 0) < 0.1:
+    for face in faces_result:
+        bbox = face.bbox.astype(int)
+        x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
+        w, h = x2 - x1, y2 - y1
+
+        # Skip tiny faces
+        if w < 40 or h < 40:
             continue
 
-        facial_area = result.get("facial_area", {})
-        if facial_area.get("w", 0) < 40 or facial_area.get("h", 0) < 40:
-            continue
-
-        face_array = result.get("face")
-        if face_array is None:
+        # Skip low confidence
+        det_score = float(face.det_score) if hasattr(face, 'det_score') else 0
+        if det_score < 0.3:
             continue
 
         face_id = str(uuid.uuid4())
         crop_filename = f"{face_id}.jpg"
         crop_path = os.path.join(user_dir, "processed", crop_filename)
 
-        face_img = (np.array(face_array) * 255).astype(np.uint8)
-        if face_img.ndim == 3 and face_img.shape[2] == 3:
-            face_pil = Image.fromarray(face_img, "RGB")
-        else:
-            face_pil = Image.fromarray(face_img)
-        face_pil.save(crop_path, "JPEG", quality=90)
+        # Crop face with padding
+        img_h, img_w = img.shape[:2]
+        pad_x, pad_y = int(w * 0.2), int(h * 0.2)
+        cx1 = max(0, x1 - pad_x)
+        cy1 = max(0, y1 - pad_y)
+        cx2 = min(img_w, x2 + pad_x)
+        cy2 = min(img_h, y2 + pad_y)
+        crop = img[cy1:cy2, cx1:cx2]
+        cv2.imwrite(crop_path, crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
+
+        # Get embedding (512-dim from ArcFace)
+        embedding = face.embedding.tolist() if face.embedding is not None else None
+
+        # Get age and gender
+        age = int(face.age) if hasattr(face, 'age') and face.age is not None else None
+        gender = "male" if hasattr(face, 'gender') and face.gender == 1 else "female" if hasattr(face, 'gender') and face.gender == 0 else None
+
+        # Get landmarks
+        landmarks = None
+        if hasattr(face, 'kps') and face.kps is not None:
+            kps = face.kps
+            if len(kps) >= 5:
+                landmarks = {
+                    "right_eye": [float(kps[0][0]), float(kps[0][1])],
+                    "left_eye": [float(kps[1][0]), float(kps[1][1])],
+                    "nose": [float(kps[2][0]), float(kps[2][1])],
+                    "mouth_right": [float(kps[3][0]), float(kps[3][1])],
+                    "mouth_left": [float(kps[4][0]), float(kps[4][1])],
+                }
 
         faces.append({
             "face_id": face_id,
             "crop_path": f"processed/{crop_filename}",
-            "bbox": {
-                "x": facial_area.get("x", 0),
-                "y": facial_area.get("y", 0),
-                "w": facial_area.get("w", 0),
-                "h": facial_area.get("h", 0),
-            },
-            "confidence": result.get("confidence", 0),
-            "landmarks": None,
+            "bbox": {"x": int(x1), "y": int(y1), "w": int(w), "h": int(h)},
+            "confidence": det_score,
+            "embedding": embedding,
+            "landmarks": landmarks,
+            "estimated_age": age,
+            "gender": gender,
         })
 
     return faces
 
 
 async def detect_faces(image_path: str, user_dir: str) -> list[dict]:
-    """Detect faces using DeepFace/SSD on CPU (reliable for scanned photos)."""
+    """Detect faces using InsightFace (SCRFD detector + ArcFace embedding + age/gender)."""
     loop = asyncio.get_event_loop()
     return await asyncio.wait_for(
-        loop.run_in_executor(_executor, _detect_faces_deepface, image_path, user_dir),
-        timeout=120.0,
+        loop.run_in_executor(_executor, _detect_faces_insightface, image_path, user_dir),
+        timeout=300.0,
     )
-
-
-def _extract_embedding_sync(image_path: str) -> list[float] | None:
-    """Extract face embedding using ArcFace. Runs in thread pool."""
-    DeepFace = _get_deepface()
-
-    try:
-        embeddings = DeepFace.represent(
-            img_path=image_path,
-            model_name="ArcFace",
-            detector_backend="skip",
-            enforce_detection=False,
-        )
-        if embeddings and len(embeddings) > 0:
-            return embeddings[0].get("embedding", [])
-    except Exception:
-        pass
-    return None
 
 
 async def extract_embedding(crop_path: str) -> list[float] | None:
-    """Async wrapper for embedding extraction."""
-    loop = asyncio.get_event_loop()
-    return await asyncio.wait_for(
-        loop.run_in_executor(_executor, _extract_embedding_sync, crop_path),
-        timeout=60.0,
-    )
+    """Extract embedding from a face crop — not needed with InsightFace (already extracted)."""
+    # InsightFace returns embedding during detection, so this is only for backward compat
+    return None
 
 
 def _count_confident_faces(faces: list[dict], min_confidence: float = 0.5) -> int:
@@ -168,7 +128,7 @@ def _rotate_and_save(image_path: str, degrees_cw: int) -> None:
 
 
 async def process_single_photo(photo_id: str, stored_filename: str, user_dir: str) -> list[dict]:
-    """Detect faces and extract embeddings for a single photo."""
+    """Detect faces, extract embeddings, and estimate age in one pass with InsightFace."""
     import shutil
 
     image_path = os.path.join(user_dir, "uploads", stored_filename)
@@ -182,10 +142,6 @@ async def process_single_photo(photo_id: str, stored_filename: str, user_dir: st
     best_confident = _count_confident_faces(faces)
 
     if best_confident > 0:
-        for face in faces:
-            crop_full_path = os.path.join(user_dir, face["crop_path"])
-            embedding = await extract_embedding(crop_full_path)
-            face["embedding"] = embedding
         return faces
 
     # No confident faces — try 90° and 270°
@@ -214,10 +170,5 @@ async def process_single_photo(photo_id: str, stored_filename: str, user_dir: st
     finally:
         if os.path.exists(backup_path):
             os.remove(backup_path)
-
-    for face in best_faces:
-        crop_full_path = os.path.join(user_dir, face["crop_path"])
-        embedding = await extract_embedding(crop_full_path)
-        face["embedding"] = embedding
 
     return best_faces

@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender1 \
     libmagic1 \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -18,11 +19,12 @@ COPY . .
 
 RUN mkdir -p /data/uploads /data/processed /data/embeddings
 
-# Pre-download DeepFace model weights to avoid slow first-run downloads
+# Pre-download InsightFace buffalo_l model
 RUN python3 -c "\
-from deepface import DeepFace; \
-DeepFace.extract_faces('https://raw.githubusercontent.com/serengil/deepface/master/tests/dataset/img1.jpg', detector_backend='ssd', enforce_detection=False); \
-DeepFace.represent('https://raw.githubusercontent.com/serengil/deepface/master/tests/dataset/img1.jpg', model_name='ArcFace', detector_backend='ssd', enforce_detection=False) \
+import insightface; \
+app = insightface.app.FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider']); \
+app.prepare(ctx_id=0, det_size=(640, 640)); \
+print('InsightFace models downloaded') \
 " || true
 
 EXPOSE 8000
