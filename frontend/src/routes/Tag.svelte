@@ -278,8 +278,8 @@
 					<div class="photo-info">
 						{#if editingPhotoId === photo.id}
 							<div class="tag-input-row">
-								<input type="number" min="1900" max="2030" placeholder="Year" bind:value={yearInput} onkeydown={(e) => e.key === 'Enter' && tagPhoto(photo.id)} class="year-input" />
 								<input type="number" min="1" max="12" placeholder="Month" bind:value={monthInput} onkeydown={(e) => e.key === 'Enter' && tagPhoto(photo.id)} class="month-input" />
+								<input type="number" min="1900" max="2030" placeholder="Year" bind:value={yearInput} onkeydown={(e) => e.key === 'Enter' && tagPhoto(photo.id)} class="year-input" />
 								<button class="btn-primary btn-small" onclick={() => tagPhoto(photo.id)}>Save</button>
 							</div>
 						{:else if photo.tagged_year}
