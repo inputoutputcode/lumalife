@@ -79,7 +79,7 @@
 				<img
 					src={photo.url}
 					alt={photo.original_filename || 'Photo'}
-					loading="lazy"
+					loading="eager"
 				/>
 				<div class="photo-overlay">
 					<span class="photo-year">
