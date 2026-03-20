@@ -81,6 +81,10 @@ export const api = {
 		return request('POST', `/photos/clusters/${clusterId}/confirm`);
 	},
 
+	deleteFace(faceId) {
+		return request('DELETE', `/photos/faces/${faceId}`);
+	},
+
 	estimateAges() {
 		return request('POST', '/photos/estimate-ages');
 	},

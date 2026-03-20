@@ -1,5 +1,24 @@
 <script>
-	let { cluster, isLargest = false, onConfirm, disabled = false } = $props();
+	import { api } from '$lib/api.js';
+	let { cluster, isLargest = false, onConfirm, onUpdate = null, disabled = false } = $props();
+	let deleting = $state({});
+
+	async function deleteFace(faceId) {
+		deleting[faceId] = true;
+		deleting = { ...deleting };
+		try {
+			await api.deleteFace(faceId);
+			cluster.faces = cluster.faces.filter(f => f.face_id !== faceId);
+			cluster.face_count = cluster.faces.length;
+			cluster = cluster;
+			if (onUpdate) onUpdate();
+		} catch (e) {
+			console.error('Delete face failed:', e);
+		} finally {
+			deleting[faceId] = false;
+			deleting = { ...deleting };
+		}
+	}
 </script>
 
 <div class="cluster-card" class:largest={isLargest} class:target={cluster.is_target}>
@@ -34,8 +53,14 @@
 
 	<div class="face-grid">
 		{#each cluster.faces as face}
-			<div class="face-thumb">
+			<div class="face-thumb" class:deleting={deleting[face.face_id]}>
 				<img src={face.crop_url} alt="Face" loading="lazy" />
+				<button
+					class="face-delete-btn"
+					title="Remove this face"
+					onclick={(e) => { e.stopPropagation(); deleteFace(face.face_id); }}
+					disabled={deleting[face.face_id]}
+				>✕</button>
 			</div>
 		{/each}
 	</div>
@@ -108,18 +133,49 @@
 	}
 
 	.face-thumb {
+		position: relative;
 		width: 64px;
 		height: 64px;
 		border-radius: 50%;
-		overflow: hidden;
+		overflow: visible;
 		background: var(--bg-primary);
 		flex-shrink: 0;
+	}
+
+	.face-thumb.deleting {
+		opacity: 0.3;
 	}
 
 	.face-thumb img {
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
+		border-radius: 50%;
+	}
+
+	.face-delete-btn {
+		position: absolute;
+		top: -4px;
+		right: -4px;
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		background: var(--error, #e53e3e);
+		color: white;
+		border: 2px solid var(--bg-card);
+		font-size: 10px;
+		line-height: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity 200ms ease;
+		padding: 0;
+	}
+
+	.face-thumb:hover .face-delete-btn {
+		opacity: 1;
 	}
 
 	.face-thumb.more {

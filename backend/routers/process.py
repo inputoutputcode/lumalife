@@ -306,6 +306,34 @@ async def confirm_cluster(cluster_id: int, request: Request):
         return {"status": "confirmed", "cluster_id": cluster_id, "face_count": count}
 
 
+@router.delete("/faces/{face_id}")
+async def delete_face(face_id: str, request: Request):
+    """Delete a detected face (wrong detection, bad crop, etc.)."""
+    user_id = request.state.user_id
+    username = request.state.username
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT f.id, f.crop_path FROM faces f
+            JOIN photos p ON f.photo_id = p.id
+            WHERE f.id = $1 AND p.user_id = $2
+        """, face_id, user_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Face not found")
+
+        # Delete crop file
+        import os
+        user_dir = get_user_dir(username)
+        crop_path = os.path.join(user_dir, row["crop_path"])
+        if os.path.exists(crop_path):
+            os.remove(crop_path)
+
+        # Delete from DB
+        await conn.execute("DELETE FROM faces WHERE id = $1", face_id)
+
+        return {"status": "deleted", "face_id": face_id}
+
+
 @router.post("/estimate-ages")
 async def estimate_ages(request: Request):
     """Run age estimation on all target person face crops."""

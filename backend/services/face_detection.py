@@ -40,6 +40,11 @@ def _detect_faces_sync(image_path: str, user_dir: str) -> list[dict]:
         if result.get("confidence", 0) < 0.1:
             continue
 
+        # Skip tiny face crops (< 40px in either dimension)
+        facial_area_check = result.get("facial_area", {})
+        if facial_area_check.get("w", 0) < 40 or facial_area_check.get("h", 0) < 40:
+            continue
+
         facial_area = result.get("facial_area", {})
         face_array = result.get("face")
 
