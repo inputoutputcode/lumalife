@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 
 from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
@@ -109,6 +110,22 @@ async def process_stream(request: Request, user: str | None = None):
                                     embedding_str,
                                     landmarks_json,
                                 )
+
+                            # Estimate age for each face via MiVOLO (GPU)
+                            for face in faces:
+                                try:
+                                    crop_full = os.path.join(user_dir, face["crop_path"])
+                                    age = await estimate_age(crop_full)
+                                    if age is not None:
+                                        await conn.execute(
+                                            """INSERT INTO age_estimates (photo_id, face_id, estimated_age, method)
+                                               VALUES ($1, $2, $3, 'mivolo')
+                                               ON CONFLICT (photo_id) DO UPDATE SET
+                                                   estimated_age = $3, method = 'mivolo'""",
+                                            photo_id, face["face_id"], age,
+                                        )
+                                except Exception as e:
+                                    print(f"Age estimation failed for face {face['face_id']}: {e}")
 
                             await conn.execute(
                                 "UPDATE photos SET processed = TRUE WHERE id = $1",
