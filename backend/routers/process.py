@@ -8,7 +8,6 @@ from sse_starlette.sse import EventSourceResponse
 from models.schema import get_pool, get_or_create_user, get_user_dir, _sanitize_username
 from services.face_detection import process_single_photo
 from services.clustering import load_embeddings, cluster_faces, get_cluster_stats
-from services.age_estimation import estimate_age
 
 router = APIRouter()
 
