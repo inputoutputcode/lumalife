@@ -31,8 +31,17 @@ def load_embeddings(face_records: list[dict]) -> tuple[list[str], np.ndarray]:
     return face_ids, np.array(embeddings)
 
 
-def cluster_faces(face_ids: list[str], embeddings: np.ndarray) -> dict[str, int]:
-    """Cluster face embeddings using DBSCAN. Returns face_id -> cluster_id mapping."""
+def cluster_faces(
+    face_ids: list[str],
+    embeddings: np.ndarray,
+    excluded_pairs: list[tuple[str, str]] | None = None,
+) -> dict[str, int]:
+    """Cluster face embeddings using DBSCAN with optional negative feedback.
+    
+    excluded_pairs: list of (face_id_a, face_id_b) that should NOT be in the same cluster.
+    These come from user deletions — if a face was removed from a cluster, it means
+    it doesn't belong with the remaining faces.
+    """
     if len(embeddings) < 2:
         if len(face_ids) == 1:
             return {face_ids[0]: 0}
@@ -43,12 +52,25 @@ def cluster_faces(face_ids: list[str], embeddings: np.ndarray) -> dict[str, int]
     norms[norms == 0] = 1
     normalized = embeddings / norms
 
-    # Cosine distance via DBSCAN
+    # Compute cosine distance matrix
+    from sklearn.metrics.pairwise import cosine_distances
+    dist_matrix = cosine_distances(normalized)
+
+    # Apply negative feedback: inflate distance for excluded pairs
+    if excluded_pairs:
+        id_to_idx = {fid: i for i, fid in enumerate(face_ids)}
+        for fid_a, fid_b in excluded_pairs:
+            if fid_a in id_to_idx and fid_b in id_to_idx:
+                i, j = id_to_idx[fid_a], id_to_idx[fid_b]
+                dist_matrix[i][j] = 2.0  # Max distance — ensure they never cluster
+                dist_matrix[j][i] = 2.0
+
+    # DBSCAN with precomputed distance matrix
     clustering = DBSCAN(
-        eps=0.68,
+        eps=0.55,
         min_samples=2,
-        metric="cosine",
-    ).fit(normalized)
+        metric="precomputed",
+    ).fit(dist_matrix)
 
     labels = clustering.labels_
 

@@ -147,6 +147,18 @@ async def init_db():
             )
         """)
 
+        # Negative feedback: faces that should NOT be in the same cluster
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS cluster_exclusions (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                face_id_kept TEXT NOT NULL,
+                face_id_removed TEXT NOT NULL,
+                embedding_removed vector(512),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+
 
 async def close_db():
     """Close the connection pool."""

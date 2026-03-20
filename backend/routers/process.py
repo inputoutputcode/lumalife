@@ -164,7 +164,14 @@ async def process_stream(request: Request, user: str | None = None):
                         face_ids, embeddings = load_embeddings(all_faces_for_clustering)
 
                         if len(face_ids) > 0:
-                            assignments = cluster_faces(face_ids, embeddings)
+                            # Load negative feedback (exclusion pairs)
+                            exclusion_rows = await conn.fetch(
+                                "SELECT face_id_kept, face_id_removed FROM cluster_exclusions WHERE user_id = $1",
+                                user_id,
+                            )
+                            excluded_pairs = [(r["face_id_kept"], r["face_id_removed"]) for r in exclusion_rows]
+
+                            assignments = cluster_faces(face_ids, embeddings, excluded_pairs=excluded_pairs)
 
                             # Clear old clusters for this user
                             await conn.execute("DELETE FROM clusters WHERE user_id = $1", user_id)
@@ -308,18 +315,33 @@ async def confirm_cluster(cluster_id: int, request: Request):
 
 @router.delete("/faces/{face_id}")
 async def delete_face(face_id: str, request: Request):
-    """Delete a detected face (wrong detection, bad crop, etc.)."""
+    """Delete a detected face and store negative feedback for clustering."""
     user_id = request.state.user_id
     username = request.state.username
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
-            SELECT f.id, f.crop_path FROM faces f
+            SELECT f.id, f.crop_path, f.cluster_id, f.embedding::text as embedding FROM faces f
             JOIN photos p ON f.photo_id = p.id
             WHERE f.id = $1 AND p.user_id = $2
         """, face_id, user_id)
         if not row:
             raise HTTPException(status_code=404, detail="Face not found")
+
+        # Store negative feedback: this face should not cluster with remaining faces
+        if row["cluster_id"] is not None:
+            # Get other faces in the same cluster
+            cluster_faces = await conn.fetch("""
+                SELECT f.id FROM faces f
+                JOIN photos p ON f.photo_id = p.id
+                WHERE f.cluster_id = $1 AND p.user_id = $2 AND f.id != $3
+            """, row["cluster_id"], user_id, face_id)
+
+            for other in cluster_faces:
+                await conn.execute("""
+                    INSERT INTO cluster_exclusions (user_id, face_id_kept, face_id_removed, embedding_removed)
+                    VALUES ($1, $2, $3, $4)
+                """, user_id, other["id"], face_id, row["embedding"])
 
         # Delete crop file
         import os
