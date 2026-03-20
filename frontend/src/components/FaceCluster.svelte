@@ -33,16 +33,11 @@
 	</div>
 
 	<div class="face-grid">
-		{#each cluster.faces.slice(0, 12) as face}
+		{#each cluster.faces as face}
 			<div class="face-thumb">
 				<img src={face.crop_url} alt="Face" loading="lazy" />
 			</div>
 		{/each}
-		{#if cluster.faces.length > 12}
-			<div class="face-thumb more">
-				+{cluster.faces.length - 12}
-			</div>
-		{/if}
 	</div>
 </div>
 
