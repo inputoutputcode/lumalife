@@ -124,7 +124,7 @@ def build_age_year_mapping(
 
 
 def assign_era_buckets(
-    photo_years: dict[str, int], min_photos_per_year: int = 3
+    photo_years: dict[str, int], min_photos_per_year: int = 2
 ) -> list[dict]:
     """Group photos into eras. Years with >= min_photos_per_year get their own era.
     Years with fewer photos are merged into ranges with adjacent years."""
