@@ -317,11 +317,11 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 		<div class="dialog-card" onclick={(e) => e.stopPropagation()}>
 			<h3>Build Timeline</h3>
-			<p><strong>{getUntaggedCount()}</strong> of {targetData.total} photos don't have a year assigned.</p>
-			<p class="dialog-hint">These photos will appear in an "Undated" section at the end of your timeline. You can tag them later.</p>
+			<p><strong>{getUntaggedCount()}</strong> of {targetData.total} photos are missing a date.</p>
+			<p class="dialog-hint">Photos without a year will be grouped under "Undated" at the end of your timeline. You can always come back and add dates later.</p>
 			<div class="dialog-actions">
-				<button class="btn-secondary" onclick={() => showBuildDialog = false}>Go back and tag more</button>
-				<button class="btn-primary" onclick={buildTimeline}>Build anyway</button>
+				<button class="btn-secondary" onclick={() => showBuildDialog = false}>Keep tagging</button>
+				<button class="btn-primary" onclick={buildTimeline}>Build timeline</button>
 			</div>
 		</div>
 	</div>
