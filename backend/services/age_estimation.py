@@ -130,36 +130,52 @@ def build_age_year_mapping(
 
 
 def assign_era_buckets(
-    photo_years: dict[str, int], bucket_size: int = 5
+    photo_years: dict[str, int], min_photos_per_year: int = 3
 ) -> list[dict]:
-    """Group photos into era buckets of ~bucket_size years."""
+    """Group photos into eras. Years with >= min_photos_per_year get their own era.
+    Years with fewer photos are merged into ranges with adjacent years."""
     if not photo_years:
         return []
 
-    years = list(photo_years.values())
-    min_year = min(years)
-    max_year = max(years)
+    # Count photos per year
+    from collections import Counter
+    year_counts = Counter(photo_years.values())
+    all_years = sorted(year_counts.keys())
 
-    # Align bucket starts to multiples of bucket_size
-    bucket_start = (min_year // bucket_size) * bucket_size
-    bucket_end = ((max_year // bucket_size) + 1) * bucket_size
-
+    # Separate years that stand alone vs need merging
     eras = []
-    current = bucket_start
-    while current < bucket_end:
-        era_start = current
-        era_end = current + bucket_size - 1
-        era_photos = [
-            pid for pid, y in photo_years.items()
-            if era_start <= y <= era_end
-        ]
-        if era_photos:
-            eras.append({
-                "era_start": era_start,
-                "era_end": era_end,
-                "label": f"{era_start}–{era_end}",
-                "photo_ids": era_photos,
-            })
-        current += bucket_size
+    merge_buffer = []
 
+    def flush_merge_buffer():
+        if not merge_buffer:
+            return
+        buf_start = merge_buffer[0]
+        buf_end = merge_buffer[-1]
+        buf_photos = [pid for pid, y in photo_years.items() if buf_start <= y <= buf_end]
+        label = str(buf_start) if buf_start == buf_end else f"{buf_start}–{buf_end}"
+        eras.append({
+            "era_start": buf_start,
+            "era_end": buf_end,
+            "label": label,
+            "photo_ids": buf_photos,
+        })
+        merge_buffer.clear()
+
+    for year in all_years:
+        if year_counts[year] >= min_photos_per_year:
+            flush_merge_buffer()
+            photos = [pid for pid, y in photo_years.items() if y == year]
+            eras.append({
+                "era_start": year,
+                "era_end": year,
+                "label": str(year),
+                "photo_ids": photos,
+            })
+        else:
+            merge_buffer.append(year)
+
+    flush_merge_buffer()
+
+    # Sort by era_start
+    eras.sort(key=lambda e: e["era_start"])
     return eras
