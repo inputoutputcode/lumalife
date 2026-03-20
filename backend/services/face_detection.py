@@ -63,6 +63,14 @@ def _detect_faces_sync(image_path: str, user_dir: str) -> list[dict]:
             face_pil = Image.fromarray(face_img)
         face_pil.save(crop_path, "JPEG", quality=90)
 
+        # Extract landmarks if available
+        landmarks = {}
+        for lm_key in ["left_eye", "right_eye", "nose", "mouth_left", "mouth_right"]:
+            if lm_key in facial_area:
+                val = facial_area[lm_key]
+                if isinstance(val, (list, tuple)) and len(val) == 2:
+                    landmarks[lm_key] = [float(val[0]), float(val[1])]
+
         faces.append({
             "face_id": face_id,
             "crop_path": f"processed/{crop_filename}",
@@ -73,6 +81,7 @@ def _detect_faces_sync(image_path: str, user_dir: str) -> list[dict]:
                 "h": facial_area.get("h", 0),
             },
             "confidence": result.get("confidence", 0),
+            "landmarks": landmarks if landmarks else None,
         })
 
     return faces

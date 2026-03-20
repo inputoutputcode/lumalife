@@ -86,15 +86,18 @@ async def process_stream(request: Request, user: str | None = None):
                                 if embedding is not None:
                                     embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
 
+                                import json as json_mod
+                                landmarks_json = json_mod.dumps(face.get("landmarks")) if face.get("landmarks") else None
+
                                 await conn.execute(
                                     """INSERT INTO faces
                                        (id, photo_id, crop_path,
-                                        bbox_x, bbox_y, bbox_w, bbox_h, confidence, embedding)
-                                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector)
+                                        bbox_x, bbox_y, bbox_w, bbox_h, confidence, embedding, landmarks)
+                                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector, $10::jsonb)
                                        ON CONFLICT (id) DO UPDATE SET
                                            crop_path = $3, bbox_x = $4, bbox_y = $5,
                                            bbox_w = $6, bbox_h = $7, confidence = $8,
-                                           embedding = $9::vector""",
+                                           embedding = $9::vector, landmarks = $10::jsonb""",
                                     face["face_id"],
                                     photo_id,
                                     face["crop_path"],
@@ -104,6 +107,7 @@ async def process_stream(request: Request, user: str | None = None):
                                     face["bbox"]["h"],
                                     face["confidence"],
                                     embedding_str,
+                                    landmarks_json,
                                 )
 
                             await conn.execute(

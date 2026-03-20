@@ -57,15 +57,22 @@ async def get_target_photos(request: Request):
         rows = await conn.fetch("""
             SELECT p.id, p.stored_filename, p.original_filename,
                    p.exif_date, p.width, p.height, p.uploaded_at,
-                   t.year as tagged_year, t.month as tagged_month
+                   t.year as tagged_year, t.month as tagged_month,
+                   ae.estimated_age
             FROM photos p
             LEFT JOIN tags t ON p.id = t.photo_id
+            LEFT JOIN age_estimates ae ON p.id = ae.photo_id
             WHERE p.user_id = $1
             ORDER BY t.year ASC NULLS LAST, p.uploaded_at ASC
         """, user_id)
 
         photos = []
         for row in rows:
+            estimated_year = None
+            if row["estimated_age"] is not None:
+                # Show estimated year range based on age estimate (±4 years)
+                estimated_year = row["estimated_age"]
+
             photos.append({
                 "id": row["id"],
                 "stored_filename": row["stored_filename"],
@@ -75,6 +82,7 @@ async def get_target_photos(request: Request):
                 "height": row["height"],
                 "tagged_year": row["tagged_year"],
                 "tagged_month": row["tagged_month"],
+                "estimated_age": float(row["estimated_age"]) if row["estimated_age"] is not None else None,
                 "url": f"/data/{username}/uploads/{row['stored_filename']}",
             })
 

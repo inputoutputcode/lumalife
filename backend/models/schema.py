@@ -82,7 +82,8 @@ async def init_db():
                 confidence REAL NOT NULL,
                 cluster_id INTEGER,
                 is_target BOOLEAN NOT NULL DEFAULT FALSE,
-                embedding vector(512)
+                embedding vector(512),
+                landmarks JSONB
             )
         """)
 

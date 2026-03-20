@@ -303,6 +303,9 @@
 									</button>
 								{/if}
 							</div>
+							{#if photo.estimated_age}
+								<p class="estimated-hint">~{Math.round(photo.estimated_age)} years old in photo</p>
+							{/if}
 						{/if}
 					</div>
 				</div>
@@ -402,6 +405,7 @@
 	.tag-actions .btn-secondary { flex: 1; }
 	.btn-exif { background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; cursor: pointer; border-radius: var(--radius); }
 	.btn-exif:hover { border-color: var(--accent); color: var(--accent); }
+	.estimated-hint { color: var(--text-muted); font-size: 0.7rem; margin-top: 4px; font-style: italic; }
 	.empty-state { text-align: center; padding: 60px 0; color: var(--text-secondary); }
 	.link-btn { background: none; color: var(--accent); font-weight: 600; font-size: inherit; text-decoration: underline; padding: 0; cursor: pointer; }
 
