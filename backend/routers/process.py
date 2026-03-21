@@ -8,6 +8,7 @@ from sse_starlette.sse import EventSourceResponse
 from models.schema import get_pool, get_or_create_user, get_user_dir, _sanitize_username
 from services.face_detection import process_single_photo
 from services.clustering import load_embeddings, cluster_faces, get_cluster_stats
+from services.age_estimation import estimate_age
 
 router = APIRouter()
 
@@ -110,20 +111,22 @@ async def process_stream(request: Request, user: str | None = None):
                                     landmarks_json,
                                 )
 
-                            # Store age estimates from InsightFace (already computed during detection)
+                            # Estimate age using ViT classifier (much better for children)
+                            from services.age_estimation import estimate_age
                             for face in faces:
-                                age = face.get("estimated_age")
-                                if age is not None:
-                                    try:
+                                try:
+                                    crop_full = os.path.join(user_dir, face["crop_path"])
+                                    age = await estimate_age(crop_full)
+                                    if age is not None:
                                         await conn.execute(
                                             """INSERT INTO age_estimates (photo_id, face_id, estimated_age, method)
-                                               VALUES ($1, $2, $3, 'insightface')
+                                               VALUES ($1, $2, $3, 'vit')
                                                ON CONFLICT (photo_id) DO UPDATE SET
-                                                   estimated_age = $3, method = 'insightface'""",
+                                                   estimated_age = $3, method = 'vit'""",
                                             photo_id, face["face_id"], float(age),
                                         )
-                                    except Exception as e:
-                                        print(f"Age estimate store failed: {e}")
+                                except Exception as e:
+                                    print(f"Age estimate failed: {e}")
 
                             await conn.execute(
                                 "UPDATE photos SET processed = TRUE WHERE id = $1",
@@ -392,6 +395,13 @@ async def estimate_ages(request: Request):
         )
 
         if not target_faces:
+            # Check if we already have age estimates from processing
+            existing = await conn.fetchval(
+                "SELECT COUNT(*) FROM age_estimates ae JOIN photos p ON ae.photo_id = p.id WHERE p.user_id = $1",
+                user_id,
+            )
+            if existing > 0:
+                return {"estimates": [], "count": 0, "note": "Age estimates already available from processing"}
             raise HTTPException(status_code=400, detail="No target person confirmed yet")
 
         results = []

@@ -10,6 +10,22 @@ _executor = ThreadPoolExecutor(max_workers=2)
 
 # InsightFace model (lazy loaded)
 _insightface_app = None
+# ViT age classifier (lazy loaded)
+_vit_age_model = None
+_vit_age_processor = None
+
+# Age range midpoints for ViT classifier
+_AGE_RANGE_MIDPOINTS = {
+    "0-2": 1,
+    "3-9": 6,
+    "10-19": 14,
+    "20-29": 25,
+    "30-39": 35,
+    "40-49": 45,
+    "50-59": 55,
+    "60-69": 65,
+    "more than 70": 75,
+}
 
 
 def _get_insightface():
@@ -22,10 +38,51 @@ def _get_insightface():
         name="buffalo_l",
         providers=["CPUExecutionProvider"],
     )
-    # det_size controls detection input size — larger = better for small faces
     _insightface_app.prepare(ctx_id=0, det_size=(640, 640))
     print("InsightFace buffalo_l model loaded")
     return _insightface_app
+
+
+def _get_vit_age():
+    global _vit_age_model, _vit_age_processor
+    if _vit_age_model is not None:
+        return _vit_age_model, _vit_age_processor
+
+    import torch
+    from transformers import ViTImageProcessor, ViTForImageClassification
+
+    _vit_age_model = ViTForImageClassification.from_pretrained("nateraw/vit-age-classifier")
+    _vit_age_processor = ViTImageProcessor.from_pretrained("nateraw/vit-age-classifier")
+    _vit_age_model.eval()
+    print("ViT age classifier loaded (nateraw/vit-age-classifier)")
+    return _vit_age_model, _vit_age_processor
+
+
+def _estimate_age_vit(crop_img: Image.Image) -> dict:
+    """Estimate age range using ViT classifier. Returns midpoint age + range label."""
+    import torch
+
+    model, processor = _get_vit_age()
+    inputs = processor(crop_img.convert("RGB"), return_tensors="pt")
+    with torch.no_grad():
+        output = model(**inputs)
+    proba = output.logits.softmax(1)
+    pred_idx = proba.argmax(1).item()
+    pred_label = model.config.id2label[pred_idx]
+    confidence = proba[0][pred_idx].item()
+
+    # Compute weighted average age from all probabilities (smoother than midpoint)
+    weighted_age = 0.0
+    for idx, prob in enumerate(proba[0]):
+        label = model.config.id2label[idx]
+        midpoint = _AGE_RANGE_MIDPOINTS.get(label, 30)
+        weighted_age += prob.item() * midpoint
+
+    return {
+        "age": round(weighted_age),
+        "age_range": pred_label,
+        "age_confidence": round(confidence, 3),
+    }
 
 
 def _detect_faces_insightface(image_path: str, user_dir: str) -> list[dict]:
@@ -71,8 +128,16 @@ def _detect_faces_insightface(image_path: str, user_dir: str) -> list[dict]:
         # Get embedding (512-dim from ArcFace)
         embedding = face.embedding.tolist() if face.embedding is not None else None
 
-        # Get age and gender
-        age = int(face.age) if hasattr(face, 'age') and face.age is not None else None
+        # Get age via ViT classifier (trained on FairFace — great with children)
+        try:
+            crop_pil = Image.fromarray(crop[:, :, ::-1])  # BGR to RGB
+            vit_result = _estimate_age_vit(crop_pil)
+            age = vit_result["age"]
+        except Exception as e:
+            print(f"ViT age estimation failed, falling back to InsightFace: {e}")
+            age = int(face.age) if hasattr(face, 'age') and face.age is not None else None
+
+        # Gender from InsightFace
         gender = "male" if hasattr(face, 'gender') and face.gender == 1 else "female" if hasattr(face, 'gender') and face.gender == 0 else None
 
         # Get landmarks
